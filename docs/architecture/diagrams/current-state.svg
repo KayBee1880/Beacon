@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrowC" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="900" height="420" fill="#ffffff"/>
+  <text x="450" y="30" text-anchor="middle" font-size="18" font-weight="700" fill="#111">Current State — Milestone 1 (in progress)</text>
+  <text x="450" y="50" text-anchor="middle" font-size="12" fill="#b3401f">One device, no networking, build not yet verified end-to-end.</text>
+
+  <rect x="60" y="80" width="780" height="300" rx="10" fill="#fafafa" stroke="#999" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="90" y="108" font-size="13" font-weight="600" fill="#555">Android App Process (single device)</text>
+
+  <rect x="100" y="130" width="280" height="80" rx="8" fill="#eef4ff" stroke="#1a4d8f" stroke-width="2"/>
+  <text x="240" y="158" text-anchor="middle" font-size="13" font-weight="700" fill="#1a4d8f">MainActivity</text>
+  <text x="240" y="176" text-anchor="middle" font-size="11" fill="#1a4d8f">(Jetpack Compose)</text>
+  <text x="240" y="196" text-anchor="middle" font-size="10.5" fill="#555">renders static placeholder text only</text>
+
+  <rect x="100" y="250" width="280" height="70" rx="8" fill="#eef4ff" stroke="#1a4d8f" stroke-width="2"/>
+  <text x="240" y="278" text-anchor="middle" font-size="13" font-weight="700" fill="#1a4d8f">BeaconApplication</text>
+  <text x="240" y="298" text-anchor="middle" font-size="10.5" fill="#555">creates the database at process start</text>
+
+  <line x1="240" y1="250" x2="240" y2="320" stroke="#b3401f" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="145" y="235" font-size="10.5" fill="#b3401f">not yet wired to a screen</text>
+
+  <rect x="480" y="150" width="320" height="170" rx="8" fill="#f5eefc" stroke="#6a2fa8" stroke-width="2"/>
+  <text x="640" y="176" text-anchor="middle" font-size="13" font-weight="700" fill="#6a2fa8">Room Database (SQLite)</text>
+  <text x="640" y="198" text-anchor="middle" font-size="11" fill="#333">identity · peer · conversation · message</text>
+  <text x="640" y="222" text-anchor="middle" font-size="10.5" fill="#555">Schema fully defined and constrained</text>
+  <text x="640" y="238" text-anchor="middle" font-size="10.5" fill="#555">(FKs, cascades, unique index on peerId).</text>
+  <text x="640" y="262" text-anchor="middle" font-size="10.5" fill="#b3401f">Empty — nothing has written a row yet.</text>
+
+  <line x1="380" y1="285" x2="480" y2="235" stroke="#333" stroke-width="2" marker-end="url(#arrowC)"/>
+  <text x="410" y="270" font-size="10.5" fill="#222">creates on startup</text>
+
+  <text x="450" y="405" text-anchor="middle" font-size="11" fill="#666">Nothing here talks to another device. No BLE, no Wi-Fi Direct, no server. See target-state.svg for what this grows into.</text>
+</svg>

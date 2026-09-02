@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.Beacon" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
