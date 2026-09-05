@@ -10,4 +10,12 @@
     <string name="nearby_title">Nearby</string>
     <string name="nearby_signed_in_as">Signed in as %1$s</string>
     <string name="nearby_empty">No peers nearby yet.</string>
+
+    <string name="permission_title">Bluetooth permission needed</string>
+    <string name="permission_description">Beacon needs Bluetooth permission to discover nearby peers. Nothing is sent anywhere until you grant it.</string>
+    <string name="permission_grant_button">Grant Permissions</string>
+
+    <string name="signal_strong">Strong</string>
+    <string name="signal_medium">Medium</string>
+    <string name="signal_weak">Weak</string>
 </resources>

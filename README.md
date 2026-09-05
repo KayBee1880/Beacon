@@ -36,8 +36,9 @@ Principles this build has actually practiced so far, each checkable against the 
 - **The Android project scaffold is written** — Gradle (Kotlin DSL), Jetpack Compose, Room + KSP.
 - **Journey 5 (returning to the app later) is verified too**: stopping and relaunching the app goes straight to the "Signed in as [name] / No peers nearby yet" screen — no re-setup prompt — confirming the `Identity` row is actually persisted to disk via Room/SQLite, not just held in memory for the session.
 - **The build compiles and runs.** `BUILD SUCCESSFUL` via Android Studio, app installs and launches on an emulator, both journeys above were exercised by hand and behaved as designed.
+- **Milestone 2 (BLE peer discovery, Journey 2) is written, not yet verified.** [`BlePeripheralRole`](android/app/src/main/java/com/beacon/ble/BlePeripheralRole.kt) advertises a public-key fingerprint and serves the real identity over GATT; [`BleCentralRole`](android/app/src/main/java/com/beacon/ble/BleCentralRole.kt) scans, resolves it, and upserts a `Peer` row via the new [`PeerRepository`](android/app/src/main/java/com/beacon/data/PeerRepository.kt); `PeerDiscoveryScreen` shows the result with a permission-gate state and coarse signal strength. Full design and the byte-budget problem it solves: [docs/03-milestone-2-ble-discovery.md](docs/03-milestone-2-ble-discovery.md). **Unverified** for a real reason, not neglect: **Android emulators don't support real Bluetooth radios**, so this milestone needs two physical devices to test at all, and hasn't been run yet.
 
-**What this deliberately does not claim:** there are zero automated tests — everything verified so far was verified manually, by hand, on one emulator. There is no networking code of any kind — no BLE, no message exchange between devices. `Peer`, `Conversation`, and `Message` (the rest of the Milestone 1 domain model) have no UI exercising them yet — only `Identity` has actually been round-tripped through the database by a real user action. All of the above are real, tracked roadmap items, not silent gaps.
+**What this deliberately does not claim:** there are zero automated tests — everything verified so far was verified manually, by hand, on one emulator. `Conversation` and `Message` (the rest of the Milestone 1 domain model) have no UI exercising them yet. Milestone 2's BLE code has compiled in the author's head and on paper, not in Android Studio or on a device — real device testing is expected to surface real bugs, per the same honesty standard Milestone 1's JDK/build issues were tracked under. All of the above are real, tracked roadmap items, not silent gaps.
 
 ## Architecture
 
@@ -60,13 +61,13 @@ Principles this build has actually practiced so far, each checkable against the 
 | Local persistence | Room 2.6.1 (SQLite) | Compile-time-checked queries, `Flow`-based reactivity, standard Android tooling ([ADR-0002](docs/architecture/0002-room-for-local-persistence.md)) |
 | Annotation processing | KSP | Faster than kapt, first-class Room support ([ADR-0004](docs/architecture/0004-project-scaffold-tooling.md)) |
 | Identity keys | Android Keystore (EC / secp256r1) | Hardware-backed identity private key storage — private key never leaves the Keystore ([ADR-0003](docs/architecture/0003-android-keystore-for-identity-keys.md)) |
+| Android BLE APIs (central + peripheral) | Peer discovery — advertise/scan, GATT client + server | Milestone 2, code written, **not yet run on real hardware** — see [docs/03](docs/03-milestone-2-ble-discovery.md) |
 | Build | Gradle (Kotlin DSL), AGP 8.5.0 | Type-checked build scripts, IDE autocomplete on config itself |
 
 ### Planned
 
 | Technology | Purpose | Milestone |
 |---|---|---|
-| Android BLE APIs (central + peripheral) | Peer discovery and direct single-hop messaging | Milestone 2–3 |
 | Wi-Fi Direct | Bulk transfer for attachments once BLE throughput is the bottleneck | Milestone 7 |
 | Store-and-forward relay logic | Multi-hop delivery when sender and recipient are never simultaneously in range | Milestone 6 |
 | SQLCipher (candidate) | At-rest database encryption, evaluated once transit encryption exists to compare against | Deferred — see [docs/02](docs/02-milestone-1-domain-and-persistence.md#5-decision-room-for-local-persistence) |
@@ -75,7 +76,7 @@ Principles this build has actually practiced so far, each checkable against the 
 
 - [x] **Milestone 0** — Foundations & repo scaffold
 - [x] **Milestone 1 — Identity & local persistence** — Journeys 1 and 5 verified running end-to-end on an emulator, 2026-09-01
-- [ ] **Milestone 2 — BLE peer discovery** ← current
+- [ ] **Milestone 2 — BLE peer discovery** ← current (design + code written; needs two physical devices to verify — emulators have no real Bluetooth)
 - [ ] Milestone 3 — Secure direct messaging
 - [ ] Milestone 4 — Delivery resilience (retries, acks, idempotency)
 - [ ] Milestone 5 — Conversations & history
@@ -96,6 +97,7 @@ Beacon/
 │   ├── 00-foundations.md                 # Product definition, architecture comparison, roadmap
 │   ├── 01-user-journeys.md               # Concrete user flows that drove the domain model
 │   ├── 02-milestone-1-domain-and-persistence.md
+│   ├── 03-milestone-2-ble-discovery.md
 │   ├── architecture/                     # ADRs (0001–0004) + current/target diagrams
 │   ├── protocol/                         # (not yet populated) wire format, sequence diagrams
 │   ├── security/                         # (not yet populated) threat model, crypto rationale
@@ -103,8 +105,9 @@ Beacon/
 ├── android/                              # Kotlin / Jetpack Compose client (Gradle project)
 │   └── app/src/main/
 │       ├── java/com/beacon/              # BeaconApplication, MainActivity
-│       │   ├── data/                     # Room entities, DAOs, database, IdentityRepository
-│       │   └── crypto/                   # Android Keystore identity key generation
+│       │   ├── data/                     # Room entities, DAOs, database, IdentityRepository, PeerRepository
+│       │   ├── crypto/                   # Android Keystore identity key generation
+│       │   └── ble/                      # BLE discovery: central/peripheral roles, GATT profile, permissions
 │       └── res/                          # Strings, theme
 ├── tools/                                # (not yet populated) dev scripts, network condition simulators
 ├── LICENSE
@@ -130,6 +133,7 @@ This is currently a local-only project — there's no remote yet, so there's no 
 - [docs/00-foundations.md](docs/00-foundations.md) — product definition, networking architecture comparison, milestone roadmap
 - [docs/01-user-journeys.md](docs/01-user-journeys.md) — concrete user flows
 - [docs/02-milestone-1-domain-and-persistence.md](docs/02-milestone-1-domain-and-persistence.md) — entity design and local persistence
+- [docs/03-milestone-2-ble-discovery.md](docs/03-milestone-2-ble-discovery.md) — BLE advertising byte budget, GATT contract, permission model
 - [docs/architecture/](docs/architecture/) — Architecture Decision Records
 
 ## License
