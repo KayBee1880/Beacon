@@ -12,7 +12,7 @@ interface IdentityDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(identity: Identity)
 
-    // 0 matches Identity.SINGLETON_ID — Room @Query strings must be compile-time literals,
+    // 0 matches Identity.SINGLETON_ID, Room @Query strings must be compile-time literals,
     // so the constant can't be interpolated directly here.
     @Query("SELECT * FROM identity WHERE id = 0 LIMIT 1")
     fun observe(): Flow<Identity?>

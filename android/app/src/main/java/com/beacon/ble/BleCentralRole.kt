@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 
-// Permission checks happen upstream, gating whether start() is ever called — see BlePermissions.kt.
+// Permission checks happen upstream, gating whether start() is ever called; see BlePermissions.kt.
 @SuppressLint("MissingPermission")
 class BleCentralRole(
     private val context: Context,

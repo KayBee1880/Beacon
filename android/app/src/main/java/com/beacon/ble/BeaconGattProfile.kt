@@ -4,7 +4,7 @@ import android.os.ParcelUuid
 import java.security.MessageDigest
 import java.util.UUID
 
-// Two tiers of UUID doing two different jobs — see docs/03-milestone-2-ble-discovery.md §2.
+// Two tiers of UUID doing two different jobs, see docs/03-milestone-2-ble-discovery.md §2.
 object BeaconGattProfile {
 
     val ADVERTISING_UUID: ParcelUuid = ParcelUuid.fromString("0000fdf0-0000-1000-8000-00805f9b34fb")
@@ -15,7 +15,7 @@ object BeaconGattProfile {
 
     private const val FINGERPRINT_LENGTH_BYTES = 16
 
-    /** First 16 bytes of SHA-256(publicKey) — small enough to fit the advertisement, see §2. */
+    /** First 16 bytes of SHA-256(publicKey), small enough to fit the advertisement, see §2. */
     fun fingerprint(publicKeyBase64: String): ByteArray =
         MessageDigest.getInstance("SHA-256")
             .digest(publicKeyBase64.toByteArray(Charsets.UTF_8))

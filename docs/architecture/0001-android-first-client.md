@@ -1,6 +1,6 @@
 # ADR-0001: Android (Kotlin) as the first and only client platform
 
-**Status:** Accepted — 2026-07-20
+**Status:** Accepted, 2026-07-20
 
 ## Context
 
@@ -12,7 +12,7 @@ Build a native Android client in Kotlin. No other platform is targeted on the cu
 
 ## Consequences
 
-- Full public API access to BLE central *and* peripheral roles, plus Wi-Fi Direct — both needed for the architecture described in `docs/00-foundations.md`.
+- Full public API access to BLE central *and* peripheral roles, plus Wi-Fi Direct, both needed for the architecture described in `docs/00-foundations.md`.
 - No iOS client possible without a substantial redesign around Multipeer Connectivity's abstraction (see alternatives below).
 - A second platform, if ever pursued, would likely motivate extracting a platform-agnostic `core/` module (see ADR-0002's note on SQLDelight as the Room alternative for that scenario).
 

@@ -10,7 +10,7 @@ import java.security.spec.ECGenParameterSpec
 
 /**
  * Generates and reads the identity keypair held in the Android Keystore.
- * The private key never leaves the Keystore — only the public key is ever read out.
+ * The private key never leaves the Keystore; only the public key is ever read out.
  */
 object IdentityKeyStore {
     private const val PROVIDER = "AndroidKeyStore"

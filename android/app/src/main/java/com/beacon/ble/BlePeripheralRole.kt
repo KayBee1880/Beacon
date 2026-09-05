@@ -16,7 +16,7 @@ import android.content.Context
 import android.util.Log
 import com.beacon.data.Identity
 
-// Permission checks happen upstream, gating whether start() is ever called — see BlePermissions.kt.
+// Permission checks happen upstream, gating whether start() is ever called; see BlePermissions.kt.
 @SuppressLint("MissingPermission")
 class BlePeripheralRole(private val context: Context) {
 
