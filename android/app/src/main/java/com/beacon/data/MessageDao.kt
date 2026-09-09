@@ -18,6 +18,9 @@ interface MessageDao {
     @Query("SELECT * FROM message WHERE conversationId = :conversationId ORDER BY createdAt ASC")
     fun observeForConversation(conversationId: String): Flow<List<Message>>
 
+    @Query("SELECT * FROM message WHERE id = :messageId")
+    suspend fun get(messageId: String): Message?
+
     @Query("SELECT * FROM message WHERE status != :deliveredStatus AND direction = :outgoing")
     suspend fun getUndelivered(
         deliveredStatus: MessageStatus = MessageStatus.DELIVERED,

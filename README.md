@@ -37,8 +37,9 @@ Principles this build has actually practiced so far, each checkable against the 
 - **Journey 5 (returning to the app later) is verified too**: stopping and relaunching the app goes straight to the "Signed in as [name] / No peers nearby yet" screen (no re-setup prompt), confirming the `Identity` row is actually persisted to disk via Room/SQLite, not just held in memory for the session.
 - **The build compiles and runs.** `BUILD SUCCESSFUL` via Android Studio, app installs and launches on an emulator, both journeys above were exercised by hand and behaved as designed.
 - **Milestone 2 (BLE peer discovery, Journey 2) is written, not yet verified.** [`BlePeripheralRole`](android/app/src/main/java/com/beacon/ble/BlePeripheralRole.kt) advertises a public-key fingerprint and serves the real identity over GATT; [`BleCentralRole`](android/app/src/main/java/com/beacon/ble/BleCentralRole.kt) scans, resolves it, and upserts a `Peer` row via the new [`PeerRepository`](android/app/src/main/java/com/beacon/data/PeerRepository.kt); `PeerDiscoveryScreen` shows the result with a permission-gate state and coarse signal strength. Full design and the byte-budget problem it solves: [docs/03-milestone-2-ble-discovery.md](docs/03-milestone-2-ble-discovery.md). **Unverified** for a real reason, not neglect: **Android emulators don't support real Bluetooth radios**, so this milestone needs two physical devices to test at all, and hasn't been run yet.
+- **Milestone 3 (secure direct messaging, Journey 3) is written, not yet verified.** [`CryptoService`](android/app/src/main/java/com/beacon/crypto/CryptoService.kt) generates a per-session ephemeral keypair, signs it with the identity key, derives an AES-256-GCM session key via ECDH and a hand-rolled HKDF ([`Hkdf`](android/app/src/main/java/com/beacon/crypto/Hkdf.kt)); [`ChatGattServer`](android/app/src/main/java/com/beacon/ble/ChatGattServer.kt) and [`ChatConnection`](android/app/src/main/java/com/beacon/ble/ChatConnection.kt) implement both sides of the handshake and the encrypted message/ack protocol over `BeaconGattProfile`'s messaging service; [`ChatScreen`](android/app/src/main/java/com/beacon/ChatScreen.kt) wires it into the UI, reachable by tapping a peer on the Nearby screen. `BUILD SUCCESSFUL` via Android Studio for all of it. Full design, including the ATT MTU fitting problem and the identity-binding gap the peripheral side needed solved: [docs/04-milestone-3-secure-messaging.md](docs/04-milestone-3-secure-messaging.md). **Unverified** for the same reason as Milestone 2: the actual handshake/message exchange needs two physical devices to run at all.
 
-**What this deliberately does not claim:** there are zero automated tests: everything verified so far was verified manually, by hand, on one emulator. `Conversation` and `Message` (the rest of the Milestone 1 domain model) have no UI exercising them yet. Milestone 2's BLE code has compiled in the author's head and on paper, not in Android Studio or on a device. Real device testing is expected to surface real bugs, per the same honesty standard Milestone 1's JDK/build issues were tracked under. All of the above are real, tracked roadmap items, not silent gaps.
+**What this deliberately does not claim:** there are zero automated tests: everything verified so far was verified manually, by hand, on one emulator, and only covers Milestones 0 and 1. `Conversation` and `Message` (the rest of the Milestone 1 domain model) have no UI exercising them beyond what Milestone 3 added. Milestones 2 and 3's BLE/crypto code compile cleanly but have never actually run a discovery or a chat. Real device testing is expected to surface real bugs, per the same honesty standard Milestone 1's JDK/build issues were tracked under. All of the above are real, tracked roadmap items, not silent gaps.
 
 ## Architecture
 
@@ -62,6 +63,7 @@ Principles this build has actually practiced so far, each checkable against the 
 | Annotation processing | KSP | Faster than kapt, first-class Room support ([ADR-0004](docs/architecture/0004-project-scaffold-tooling.md)) |
 | Identity keys | Android Keystore (EC / secp256r1) | Hardware-backed identity private key storage; private key never leaves the Keystore ([ADR-0003](docs/architecture/0003-android-keystore-for-identity-keys.md)) |
 | Android BLE APIs (central + peripheral) | Peer discovery: advertise/scan, GATT client + server | Milestone 2, code written, **not yet run on real hardware**, see [docs/03](docs/03-milestone-2-ble-discovery.md) |
+| Message encryption | Ephemeral EC/secp256r1 + ECDH + HKDF-SHA256 + AES-256-GCM | Milestone 3, code written, **not yet run on real hardware**, see [docs/04](docs/04-milestone-3-secure-messaging.md) |
 | Build | Gradle (Kotlin DSL), AGP 8.5.0 | Type-checked build scripts, IDE autocomplete on config itself |
 
 ### Planned
@@ -76,8 +78,8 @@ Principles this build has actually practiced so far, each checkable against the 
 
 - [x] **Milestone 0: Foundations & repo scaffold**
 - [x] **Milestone 1: Identity & local persistence** (Journeys 1 and 5 verified running end-to-end on an emulator, 2026-09-01)
-- [ ] **Milestone 2: BLE peer discovery** ← current (design + code written; needs two physical devices to verify since emulators have no real Bluetooth)
-- [ ] Milestone 3: Secure direct messaging
+- [ ] **Milestone 2: BLE peer discovery** (design + code written; needs two physical devices to verify since emulators have no real Bluetooth)
+- [ ] **Milestone 3: Secure direct messaging** ← current (design + code written; needs two physical devices to verify)
 - [ ] Milestone 4: Delivery resilience (retries, acks, idempotency)
 - [ ] Milestone 5: Conversations & history
 - [ ] Milestone 6: Store-and-forward relay
@@ -98,16 +100,17 @@ Beacon/
 │   ├── 01-user-journeys.md               # Concrete user flows that drove the domain model
 │   ├── 02-milestone-1-domain-and-persistence.md
 │   ├── 03-milestone-2-ble-discovery.md
+│   ├── 04-milestone-3-secure-messaging.md
 │   ├── architecture/                     # ADRs (0001 to 0004) + current/target diagrams
 │   ├── protocol/                         # (not yet populated) wire format, sequence diagrams
 │   ├── security/                         # (not yet populated) threat model, crypto rationale
 │   └── testing/                          # (not yet populated) network simulation, benchmarks
 ├── android/                              # Kotlin / Jetpack Compose client (Gradle project)
 │   └── app/src/main/
-│       ├── java/com/beacon/              # BeaconApplication, MainActivity
-│       │   ├── data/                     # Room entities, DAOs, database, IdentityRepository, PeerRepository
-│       │   ├── crypto/                   # Android Keystore identity key generation
-│       │   └── ble/                      # BLE discovery: central/peripheral roles, GATT profile, permissions
+│       ├── java/com/beacon/              # BeaconApplication, MainActivity, ChatScreen
+│       │   ├── data/                     # Room entities, DAOs, database, repositories
+│       │   ├── crypto/                   # Identity Keystore key, ephemeral session crypto (CryptoService, Hkdf)
+│       │   └── ble/                      # Discovery (central/peripheral roles) + chat (ChatConnection, ChatGattServer, ChatFrame)
 │       └── res/                          # Strings, theme
 ├── tools/                                # (not yet populated) dev scripts, network condition simulators
 ├── LICENSE
@@ -134,6 +137,7 @@ This is currently a local-only project: there's no remote yet, so there's no `gi
 - [docs/01-user-journeys.md](docs/01-user-journeys.md): concrete user flows
 - [docs/02-milestone-1-domain-and-persistence.md](docs/02-milestone-1-domain-and-persistence.md): entity design and local persistence
 - [docs/03-milestone-2-ble-discovery.md](docs/03-milestone-2-ble-discovery.md): BLE advertising byte budget, GATT contract, permission model
+- [docs/04-milestone-3-secure-messaging.md](docs/04-milestone-3-secure-messaging.md): ephemeral session keys, ECDH/HKDF/AES-GCM, GATT message framing
 - [docs/architecture/](docs/architecture/): Architecture Decision Records
 
 ## License

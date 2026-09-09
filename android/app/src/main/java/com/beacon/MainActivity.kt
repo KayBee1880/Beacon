@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,8 +36,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.beacon.ble.BlePermissions
 import com.beacon.ble.PeerDiscovery
+import com.beacon.data.ConversationRepository
 import com.beacon.data.Identity
 import com.beacon.data.IdentityRepository
+import com.beacon.data.MessageRepository
 import com.beacon.data.Peer
 import com.beacon.data.PeerRepository
 import kotlinx.coroutines.flow.combine
@@ -52,6 +55,8 @@ class MainActivity : ComponentActivity() {
                     BeaconApp(
                         identityRepository = app.identityRepository,
                         peerRepository = app.peerRepository,
+                        conversationRepository = app.conversationRepository,
+                        messageRepository = app.messageRepository,
                         peerDiscovery = app.peerDiscovery
                     )
                 }
@@ -64,17 +69,57 @@ class MainActivity : ComponentActivity() {
 private fun BeaconApp(
     identityRepository: IdentityRepository,
     peerRepository: PeerRepository,
+    conversationRepository: ConversationRepository,
+    messageRepository: MessageRepository,
     peerDiscovery: PeerDiscovery
 ) {
     val identity by identityRepository.observe().collectAsState(initial = null)
     val currentIdentity = identity
     if (currentIdentity == null) {
         IdentitySetupScreen(identityRepository = identityRepository)
-    } else {
+        return
+    }
+
+    val context = LocalContext.current
+    var hasPermissions by remember { mutableStateOf(BlePermissions.allGranted(context)) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results -> hasPermissions = results.values.all { it } }
+
+    if (!hasPermissions) {
+        PermissionNeededContent(onRequestPermissions = { permissionLauncher.launch(BlePermissions.required()) })
+        return
+    }
+
+    // Discovery's lifecycle is tied to having an identity at all, not to which screen is
+    // currently visible: it has to keep running in the background while a chat is open
+    // too, both so this device stays connectable (BlePeripheralRole) and so other peers
+    // keep resolving. Tying this to PeerDiscoveryScreen's own composition instead (as
+    // Milestone 2 originally did, before there was a second screen to navigate to) would
+    // tear discovery down the moment either side of a chat navigates away from Nearby,
+    // closing the very GATT server the chat connection depends on.
+    DisposableEffect(currentIdentity) {
+        peerDiscovery.start(currentIdentity)
+        onDispose { peerDiscovery.stop() }
+    }
+
+    var selectedPeer by remember { mutableStateOf<Peer?>(null) }
+    val peer = selectedPeer
+    if (peer == null) {
         PeerDiscoveryScreen(
             identity = currentIdentity,
             peerRepository = peerRepository,
-            peerDiscovery = peerDiscovery
+            peerDiscovery = peerDiscovery,
+            onPeerSelected = { selectedPeer = it }
+        )
+    } else {
+        ChatScreen(
+            identity = currentIdentity,
+            peer = peer,
+            peerDiscovery = peerDiscovery,
+            conversationRepository = conversationRepository,
+            messageRepository = messageRepository,
+            onBack = { selectedPeer = null }
         )
     }
 }
@@ -139,26 +184,9 @@ private fun bucketRssi(rssi: Int): SignalStrength = when {
 private fun PeerDiscoveryScreen(
     identity: Identity,
     peerRepository: PeerRepository,
-    peerDiscovery: PeerDiscovery
+    peerDiscovery: PeerDiscovery,
+    onPeerSelected: (Peer) -> Unit
 ) {
-    val context = LocalContext.current
-    var hasPermissions by remember { mutableStateOf(BlePermissions.allGranted(context)) }
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        hasPermissions = results.values.all { it }
-    }
-
-    if (!hasPermissions) {
-        PermissionNeededContent(onRequestPermissions = { permissionLauncher.launch(BlePermissions.required()) })
-        return
-    }
-
-    DisposableEffect(identity) {
-        peerDiscovery.start(identity)
-        onDispose { peerDiscovery.stop() }
-    }
-
     val nearbyPeers by remember(peerRepository, peerDiscovery) {
         combine(peerRepository.observeAll(), peerDiscovery.rssiByPeerId) { peers, rssiByPeerId ->
             val now = System.currentTimeMillis()
@@ -178,7 +206,7 @@ private fun PeerDiscoveryScreen(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(nearbyPeers, key = { it.peer.id }) { nearbyPeer ->
-                    PeerRow(nearbyPeer)
+                    PeerRow(nearbyPeer, onClick = { onPeerSelected(nearbyPeer.peer) })
                 }
             }
         }
@@ -205,8 +233,11 @@ private fun PermissionNeededContent(onRequestPermissions: () -> Unit) {
 }
 
 @Composable
-private fun PeerRow(nearbyPeer: NearbyPeerUiState) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+private fun PeerRow(nearbyPeer: NearbyPeerUiState, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
         Text(nearbyPeer.peer.displayName)
         Text(
             stringResource(

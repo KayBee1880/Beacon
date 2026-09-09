@@ -36,6 +36,14 @@ class BleCentralRole(
     private val _rssiByPeerId = MutableStateFlow<Map<String, Int>>(emptyMap())
     val rssiByPeerId: StateFlow<Map<String, Int>> = _rssiByPeerId
 
+    // D-018: which identity public key a given BLE device address resolved to, kept in
+    // memory only (never persisted, a device's current BLE address is transient
+    // background data, same treatment as RSSI above, not identity). This is what lets
+    // BlePeripheralRole verify a chat handshake's signature against the right peer
+    // without a second, redundant resolve connection.
+    private val _identityPublicKeyByDeviceAddress = MutableStateFlow<Map<String, String>>(emptyMap())
+    val identityPublicKeyByDeviceAddress: StateFlow<Map<String, String>> = _identityPublicKeyByDeviceAddress
+
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val device = result.device ?: return
@@ -62,6 +70,7 @@ class BleCentralRole(
         bluetoothManager.adapter?.bluetoothLeScanner?.stopScan(scanCallback)
         resolvingDevices.clear()
         _rssiByPeerId.value = emptyMap()
+        _identityPublicKeyByDeviceAddress.value = emptyMap()
     }
 
     private fun resolveIdentity(device: BluetoothDevice, rssi: Int) {
@@ -90,7 +99,7 @@ class BleCentralRole(
             }
 
             // This 3-arg overload alone covers minSdk 26-34: the platform's API 33+ 4-arg override delegates to it.
-            @Suppress("DEPRECATION")
+            @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
             override fun onCharacteristicRead(
                 gatt: BluetoothGatt,
                 characteristic: BluetoothGattCharacteristic,
@@ -121,6 +130,7 @@ class BleCentralRole(
                         val displayName = String(value, StandardCharsets.UTF_8)
                         if (publicKey != null) {
                             _rssiByPeerId.update { it + (publicKey to rssi) }
+                            _identityPublicKeyByDeviceAddress.update { it + (device.address to publicKey) }
                             scope.launch { onPeerResolved(publicKey, displayName) }
                         }
                         gatt.disconnect()
