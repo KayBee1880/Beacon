@@ -66,4 +66,37 @@ class MessageRepository(
         messageDao.update(updated)
         return updated
     }
+
+    suspend fun getRetryableForConversation(conversationId: String): List<Message> =
+        messageDao.getRetryableForConversation(conversationId, System.currentTimeMillis())
+
+    // D-025: the one place a send failure is actually handled now, whether the failing
+    // attempt was the user's original send or a later background retry (docs/05 §8).
+    // Schedules the next attempt with exponential backoff (D-022), or gives up and calls
+    // markFailed once the retry budget (provisional, see docs/05 §1) is exhausted.
+    suspend fun scheduleRetry(message: Message): Message {
+        val newRetryCount = message.retryCount + 1
+        if (newRetryCount > MAX_RETRY_COUNT) {
+            return markFailed(message)
+        }
+        val updated = message.copy(
+            retryCount = newRetryCount,
+            nextRetryAt = System.currentTimeMillis() + backoffDelayMillis(newRetryCount)
+        )
+        messageDao.update(updated)
+        return updated
+    }
+
+    private fun backoffDelayMillis(retryCount: Int): Long {
+        val exponential = BASE_RETRY_DELAY_MS * (1L shl (retryCount - 1))
+        return minOf(exponential, MAX_RETRY_DELAY_MS)
+    }
+
+    private companion object {
+        // Provisional starting guesses (docs/05 §1), expected to change once real
+        // device testing shows actual reconnection timing, not validated numbers.
+        const val MAX_RETRY_COUNT = 5
+        const val BASE_RETRY_DELAY_MS = 5_000L
+        const val MAX_RETRY_DELAY_MS = 5 * 60_000L
+    }
 }

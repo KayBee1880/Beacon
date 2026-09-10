@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
 class BleCentralRole(
     private val context: Context,
     private val scope: CoroutineScope,
-    private val onPeerResolved: suspend (publicKey: String, displayName: String) -> Unit
+    private val onPeerResolved: suspend (publicKey: String, displayName: String, deviceAddress: String) -> Unit
 ) {
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
 
@@ -131,7 +131,7 @@ class BleCentralRole(
                         if (publicKey != null) {
                             _rssiByPeerId.update { it + (publicKey to rssi) }
                             _identityPublicKeyByDeviceAddress.update { it + (device.address to publicKey) }
-                            scope.launch { onPeerResolved(publicKey, displayName) }
+                            scope.launch { onPeerResolved(publicKey, displayName, device.address) }
                         }
                         gatt.disconnect()
                     }

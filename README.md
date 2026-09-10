@@ -38,8 +38,9 @@ Principles this build has actually practiced so far, each checkable against the 
 - **The build compiles and runs.** `BUILD SUCCESSFUL` via Android Studio, app installs and launches on an emulator, both journeys above were exercised by hand and behaved as designed.
 - **Milestone 2 (BLE peer discovery, Journey 2) is written, partially verified.** [`BlePeripheralRole`](android/app/src/main/java/com/beacon/ble/BlePeripheralRole.kt) advertises a public-key fingerprint and serves the real identity over GATT; [`BleCentralRole`](android/app/src/main/java/com/beacon/ble/BleCentralRole.kt) scans, resolves it, and upserts a `Peer` row via the new [`PeerRepository`](android/app/src/main/java/com/beacon/data/PeerRepository.kt); `PeerDiscoveryScreen` shows the result with a permission-gate state and coarse signal strength. Full design and the byte-budget problem it solves: [docs/03-milestone-2-ble-discovery.md](docs/03-milestone-2-ble-discovery.md). **Tried on two Android 14 emulators, 2026-09-09**: every individual BLE API call succeeded cleanly on both sides (GATT server, both services, and the scanner all registered with `status=0`; advertising reported no failure), confirming the app's own code exercises the platform correctly. Neither device discovered the other, isolating the gap to the emulator-to-emulator virtual Bluetooth bridge itself, not Beacon's code, exactly the risk docs/03 §8 already named. **Actual discovery between two devices still needs real hardware to confirm.**
 - **Milestone 3 (secure direct messaging, Journey 3) is written, not yet verified.** [`CryptoService`](android/app/src/main/java/com/beacon/crypto/CryptoService.kt) generates a per-session ephemeral keypair, signs it with the identity key, derives an AES-256-GCM session key via ECDH and a hand-rolled HKDF ([`Hkdf`](android/app/src/main/java/com/beacon/crypto/Hkdf.kt)); [`ChatGattServer`](android/app/src/main/java/com/beacon/ble/ChatGattServer.kt) and [`ChatConnection`](android/app/src/main/java/com/beacon/ble/ChatConnection.kt) implement both sides of the handshake and the encrypted message/ack protocol over `BeaconGattProfile`'s messaging service; [`ChatScreen`](android/app/src/main/java/com/beacon/ChatScreen.kt) wires it into the UI, reachable by tapping a peer on the Nearby screen. `BUILD SUCCESSFUL` via Android Studio for all of it. Full design, including the ATT MTU fitting problem and the identity-binding gap the peripheral side needed solved: [docs/04-milestone-3-secure-messaging.md](docs/04-milestone-3-secure-messaging.md). **Unverified**, same reason as Milestone 2: the actual handshake/message exchange needs two devices that can actually discover each other, which real hardware is still the only confirmed path to.
+- **Milestone 4 (delivery resilience, Journey 4) is written, not yet verified.** `Message` gained `retryCount`/`nextRetryAt`; [`MessageRepository.scheduleRetry`](android/app/src/main/java/com/beacon/data/MessageRepository.kt) is now the one place a send failure is handled, either scheduling an exponentially-backed-off retry or giving up to `FAILED` after 5 attempts; [`MessageRetryCoordinator`](android/app/src/main/java/com/beacon/ble/MessageRetryCoordinator.kt) reacts to ambient discovery re-resolving a peer and opens a fresh `ChatConnection` in the background to resend, independent of whether `ChatScreen` is open; a small registry ([`ActiveChatConnections`](android/app/src/main/java/com/beacon/ble/ActiveChatConnections.kt)) stops a screen-initiated chat and a background retry from double-connecting to the same peer. `BUILD SUCCESSFUL` via Android Studio for all of it. This milestone was explicitly designed without real BLE failure-mode data (still blocked, see above); every retry/backoff constant is a labeled provisional guess, not a validated number: [docs/05-milestone-4-delivery-resilience.md](docs/05-milestone-4-delivery-resilience.md) §1.
 
-**What this deliberately does not claim:** there are zero automated tests: everything verified so far was verified manually, by hand, on one emulator, and only covers Milestones 0 and 1. `Conversation` and `Message` (the rest of the Milestone 1 domain model) have no UI exercising them beyond what Milestone 3 added. Milestones 2 and 3's BLE/crypto code compile cleanly but have never actually run a discovery or a chat. Real device testing is expected to surface real bugs, per the same honesty standard Milestone 1's JDK/build issues were tracked under. All of the above are real, tracked roadmap items, not silent gaps.
+**What this deliberately does not claim:** there are zero automated tests: everything verified so far was verified manually, by hand, on one emulator, and only covers Milestones 0 and 1. `Conversation` and `Message` (the rest of the Milestone 1 domain model) have no UI exercising them beyond what Milestones 3 and 4 added. Milestones 2 through 4's BLE/crypto/retry code compile cleanly but have never actually run a discovery, a chat, or a retry. Real device testing is expected to surface real bugs, per the same honesty standard Milestone 1's JDK/build issues were tracked under. All of the above are real, tracked roadmap items, not silent gaps.
 
 ## Architecture
 
@@ -79,8 +80,8 @@ Principles this build has actually practiced so far, each checkable against the 
 - [x] **Milestone 0: Foundations & repo scaffold**
 - [x] **Milestone 1: Identity & local persistence** (Journeys 1 and 5 verified running end-to-end on an emulator, 2026-09-01)
 - [ ] **Milestone 2: BLE peer discovery** (design + code written; individual BLE API calls confirmed working on emulators, 2026-09-09; actual discovery needs two physical devices to verify)
-- [ ] **Milestone 3: Secure direct messaging** ← current (design + code written; needs two physical devices to verify)
-- [ ] Milestone 4: Delivery resilience (retries, acks, idempotency)
+- [ ] **Milestone 3: Secure direct messaging** (design + code written; needs two physical devices to verify)
+- [ ] **Milestone 4: Delivery resilience** ← current (design + code written; needs two physical devices to verify; designed without real BLE failure data, see docs/05 §1)
 - [ ] Milestone 5: Conversations & history
 - [ ] Milestone 6: Store-and-forward relay
 - [ ] Milestone 7: Wi-Fi Direct bulk transport
@@ -101,6 +102,7 @@ Beacon/
 │   ├── 02-milestone-1-domain-and-persistence.md
 │   ├── 03-milestone-2-ble-discovery.md
 │   ├── 04-milestone-3-secure-messaging.md
+│   ├── 05-milestone-4-delivery-resilience.md
 │   ├── architecture/                     # ADRs (0001 to 0004) + current/target diagrams
 │   ├── protocol/                         # (not yet populated) wire format, sequence diagrams
 │   ├── security/                         # (not yet populated) threat model, crypto rationale
@@ -138,6 +140,7 @@ This is currently a local-only project: there's no remote yet, so there's no `gi
 - [docs/02-milestone-1-domain-and-persistence.md](docs/02-milestone-1-domain-and-persistence.md): entity design and local persistence
 - [docs/03-milestone-2-ble-discovery.md](docs/03-milestone-2-ble-discovery.md): BLE advertising byte budget, GATT contract, permission model
 - [docs/04-milestone-3-secure-messaging.md](docs/04-milestone-3-secure-messaging.md): ephemeral session keys, ECDH/HKDF/AES-GCM, GATT message framing
+- [docs/05-milestone-4-delivery-resilience.md](docs/05-milestone-4-delivery-resilience.md): retry/backoff design, built without real BLE failure data by necessity
 - [docs/architecture/](docs/architecture/): Architecture Decision Records
 
 ## License

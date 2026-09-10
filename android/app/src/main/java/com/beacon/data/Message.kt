@@ -28,5 +28,7 @@ data class Message(
     val content: String,
     val status: MessageStatus,
     val createdAt: Long,
-    val deliveredAt: Long? = null
+    val deliveredAt: Long? = null,
+    val retryCount: Int = 0,
+    val nextRetryAt: Long? = null
 )

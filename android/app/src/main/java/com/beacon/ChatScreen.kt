@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.beacon.ble.ActiveChatConnections
 import com.beacon.ble.ChatConnection
 import com.beacon.ble.ChatConnectionState
 import com.beacon.ble.PeerDiscovery
@@ -56,6 +57,7 @@ fun ChatScreen(
     peerDiscovery: PeerDiscovery,
     conversationRepository: ConversationRepository,
     messageRepository: MessageRepository,
+    activeChatConnections: ActiveChatConnections,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -90,13 +92,22 @@ fun ChatScreen(
             messageRepository = messageRepository,
             scope = this
         )
+        // D-024: if a background retry already holds a connection to this peer, don't
+        // open a second one, this screen just shows whatever state that leaves it in.
+        if (!activeChatConnections.tryRegister(peer.id, chatConnection)) {
+            connectionState = ChatConnectionState.FAILED
+            return@LaunchedEffect
+        }
         connection = chatConnection
         launch { chatConnection.state.collect { connectionState = it } }
         chatConnection.connect(device)
     }
 
     DisposableEffect(peer.id) {
-        onDispose { connection?.disconnect() }
+        onDispose {
+            connection?.let { activeChatConnections.unregister(peer.id, it) }
+            connection?.disconnect()
+        }
     }
 
     val messages by remember(conversationId) {

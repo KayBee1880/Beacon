@@ -82,9 +82,10 @@ class ChatConnection(
         val key = sessionKey
         if (key == null) {
             // Deliberately no queue-until-ready here: a send attempted before the
-            // handshake completes fails outright, per docs/04 §8/§9; retrying sends
-            // is Milestone 4's job, not this one's.
-            messageRepository.markFailed(message)
+            // handshake completes doesn't retry in place, it's handed to the same
+            // schedule/backoff path as any other failure (D-025); MessageRetryCoordinator
+            // is what actually resends once the peer is seen again.
+            messageRepository.scheduleRetry(message)
             return
         }
         val payload = cryptoService.encrypt(key, ChatMessagePlaintext.encodeMessage(message.id, message.content))
@@ -117,7 +118,7 @@ class ChatConnection(
 
     private fun failPendingWrite(write: PendingWrite) {
         if (write is PendingWrite.OutgoingMessage) {
-            scope.launch { messageRepository.markFailed(write.message) }
+            scope.launch { messageRepository.scheduleRetry(write.message) }
         }
     }
 
@@ -201,7 +202,7 @@ class ChatConnection(
                     if (status == BluetoothGatt.GATT_SUCCESS) {
                         messageRepository.markSent(completed.message)
                     } else {
-                        messageRepository.markFailed(completed.message)
+                        messageRepository.scheduleRetry(completed.message)
                     }
                 }
             }

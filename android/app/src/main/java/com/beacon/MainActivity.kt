@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.beacon.ble.ActiveChatConnections
 import com.beacon.ble.BlePermissions
 import com.beacon.ble.PeerDiscovery
 import com.beacon.data.ConversationRepository
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
                         peerRepository = app.peerRepository,
                         conversationRepository = app.conversationRepository,
                         messageRepository = app.messageRepository,
+                        activeChatConnections = app.activeChatConnections,
                         peerDiscovery = app.peerDiscovery
                     )
                 }
@@ -71,6 +73,7 @@ private fun BeaconApp(
     peerRepository: PeerRepository,
     conversationRepository: ConversationRepository,
     messageRepository: MessageRepository,
+    activeChatConnections: ActiveChatConnections,
     peerDiscovery: PeerDiscovery
 ) {
     val identity by identityRepository.observe().collectAsState(initial = null)
@@ -119,6 +122,7 @@ private fun BeaconApp(
             peerDiscovery = peerDiscovery,
             conversationRepository = conversationRepository,
             messageRepository = messageRepository,
+            activeChatConnections = activeChatConnections,
             onBack = { selectedPeer = null }
         )
     }

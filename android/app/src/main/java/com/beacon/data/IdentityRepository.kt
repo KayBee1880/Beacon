@@ -9,6 +9,10 @@ class IdentityRepository(private val identityDao: IdentityDao) {
 
     fun observe(): Flow<Identity?> = identityDao.observe()
 
+    // One-shot read for callers that aren't Composables (e.g. MessageRetryCoordinator),
+    // which need the current identity at one moment rather than an ongoing subscription.
+    suspend fun get(): Identity? = identityDao.get()
+
     suspend fun createIdentity(displayName: String) {
         val publicKey = IdentityKeyStore.getOrCreatePublicKey(keystoreAlias)
         identityDao.insert(
