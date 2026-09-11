@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -107,15 +110,9 @@ private fun BeaconApp(
     }
 
     var selectedPeer by remember { mutableStateOf<Peer?>(null) }
+    var topLevelTab by remember { mutableStateOf(TopLevelTab.NEARBY) }
     val peer = selectedPeer
-    if (peer == null) {
-        PeerDiscoveryScreen(
-            identity = currentIdentity,
-            peerRepository = peerRepository,
-            peerDiscovery = peerDiscovery,
-            onPeerSelected = { selectedPeer = it }
-        )
-    } else {
+    if (peer != null) {
         ChatScreen(
             identity = currentIdentity,
             peer = peer,
@@ -125,8 +122,44 @@ private fun BeaconApp(
             activeChatConnections = activeChatConnections,
             onBack = { selectedPeer = null }
         )
+        return
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f)) {
+            when (topLevelTab) {
+                TopLevelTab.NEARBY -> PeerDiscoveryScreen(
+                    identity = currentIdentity,
+                    peerRepository = peerRepository,
+                    peerDiscovery = peerDiscovery,
+                    onPeerSelected = { selectedPeer = it }
+                )
+                TopLevelTab.CONVERSATIONS -> ConversationsScreen(
+                    conversationRepository = conversationRepository,
+                    peerRepository = peerRepository,
+                    onConversationSelected = { selectedPeer = it }
+                )
+            }
+        }
+        NavigationBar {
+            NavigationBarItem(
+                selected = topLevelTab == TopLevelTab.NEARBY,
+                onClick = { topLevelTab = TopLevelTab.NEARBY },
+                icon = {},
+                label = { Text(stringResource(R.string.nav_nearby)) }
+            )
+            NavigationBarItem(
+                selected = topLevelTab == TopLevelTab.CONVERSATIONS,
+                onClick = { topLevelTab = TopLevelTab.CONVERSATIONS },
+                icon = {},
+                label = { Text(stringResource(R.string.nav_conversations)) }
+            )
+        }
     }
 }
+
+// D-027: text labels only, no Icon glyphs; see docs/06 §3.
+private enum class TopLevelTab { NEARBY, CONVERSATIONS }
 
 @Composable
 private fun IdentitySetupScreen(identityRepository: IdentityRepository) {

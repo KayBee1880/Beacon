@@ -33,4 +33,10 @@
     <string name="message_status_sent">Sent</string>
     <string name="message_status_delivered">Delivered</string>
     <string name="message_status_failed">Failed</string>
+
+    <string name="nav_nearby">Nearby</string>
+    <string name="nav_conversations">Conversations</string>
+
+    <string name="conversations_title">Conversations</string>
+    <string name="conversations_empty">No conversations yet.</string>
 </resources>
