@@ -13,6 +13,12 @@ object BeaconGattProfile {
     val PUBLIC_KEY_CHARACTERISTIC_UUID: UUID = UUID.fromString("a9a065e1-ca6c-4bd4-8c3d-de81bf609348")
     val DISPLAY_NAME_CHARACTERISTIC_UUID: UUID = UUID.fromString("9623d7d0-482a-4b06-b375-8db41e6b9868")
 
+    // Milestone 6 (D-030): the long-term end-to-end encryption key and its signature,
+    // read in the same resolve sequence as the two characteristics above so a sender can
+    // encrypt a relay envelope to a peer without a live connection to them.
+    val ENCRYPTION_PUBLIC_KEY_CHARACTERISTIC_UUID: UUID = UUID.fromString("6a2f9c31-df3e-4a7b-9d5c-1e8f4b3a6c72")
+    val ENCRYPTION_PUBLIC_KEY_SIGNATURE_CHARACTERISTIC_UUID: UUID = UUID.fromString("3e7b8f4a-1c9d-4e6b-8a2f-5d9c7e4b1f83")
+
     // Milestone 3 (docs/04): one service for the handshake and the encrypted chat itself,
     // exposed only over the long-lived per-chat connection docs/04 §5 describes, never
     // during the brief Milestone 2 resolve connection.

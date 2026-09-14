@@ -19,6 +19,8 @@ import android.util.Log
 import com.beacon.data.ConversationRepository
 import com.beacon.data.Identity
 import com.beacon.data.MessageRepository
+import com.beacon.data.PeerRepository
+import com.beacon.data.RelayEnvelopeRepository
 import kotlinx.coroutines.CoroutineScope
 import java.util.concurrent.ConcurrentHashMap
 
@@ -29,6 +31,8 @@ class BlePeripheralRole(
     private val scope: CoroutineScope,
     private val conversationRepository: ConversationRepository,
     private val messageRepository: MessageRepository,
+    private val peerRepository: PeerRepository,
+    private val relayEnvelopeRepository: RelayEnvelopeRepository,
     private val resolvedIdentityByDeviceAddress: () -> Map<String, String>
 ) {
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -40,6 +44,9 @@ class BlePeripheralRole(
 
     private var publicKeyBytes: ByteArray = ByteArray(0)
     private var displayNameBytes: ByteArray = ByteArray(0)
+    // Milestone 6 (D-030): served the same read-only way as the two fields above.
+    private var encryptionPublicKeyBytes: ByteArray = ByteArray(0)
+    private var encryptionPublicKeySignatureBytes: ByteArray = ByteArray(0)
 
     // Devices that have written ENABLE_NOTIFICATION_VALUE to TX's CCCD: notifying a
     // device that hasn't subscribed yet would silently go nowhere, so this is checked
@@ -69,6 +76,8 @@ class BlePeripheralRole(
             val value = when (characteristic.uuid) {
                 BeaconGattProfile.PUBLIC_KEY_CHARACTERISTIC_UUID -> publicKeyBytes
                 BeaconGattProfile.DISPLAY_NAME_CHARACTERISTIC_UUID -> displayNameBytes
+                BeaconGattProfile.ENCRYPTION_PUBLIC_KEY_CHARACTERISTIC_UUID -> encryptionPublicKeyBytes
+                BeaconGattProfile.ENCRYPTION_PUBLIC_KEY_SIGNATURE_CHARACTERISTIC_UUID -> encryptionPublicKeySignatureBytes
                 else -> null
             }
             if (value == null) {
@@ -130,11 +139,15 @@ class BlePeripheralRole(
     fun start(identity: Identity) {
         publicKeyBytes = identity.publicKey.toByteArray(Charsets.UTF_8)
         displayNameBytes = identity.displayName.toByteArray(Charsets.UTF_8)
+        encryptionPublicKeyBytes = identity.encryptionPublicKey.toByteArray(Charsets.UTF_8)
+        encryptionPublicKeySignatureBytes = identity.encryptionPublicKeySignature.toByteArray(Charsets.UTF_8)
 
         chatGattServer = ChatGattServer(
             identity = identity,
             conversationRepository = conversationRepository,
             messageRepository = messageRepository,
+            peerRepository = peerRepository,
+            relayEnvelopeRepository = relayEnvelopeRepository,
             resolvedIdentityByDeviceAddress = resolvedIdentityByDeviceAddress,
             scope = scope,
             sendToDevice = ::sendToDevice
@@ -200,6 +213,20 @@ class BlePeripheralRole(
         service.addCharacteristic(
             BluetoothGattCharacteristic(
                 BeaconGattProfile.DISPLAY_NAME_CHARACTERISTIC_UUID,
+                BluetoothGattCharacteristic.PROPERTY_READ,
+                BluetoothGattCharacteristic.PERMISSION_READ
+            )
+        )
+        service.addCharacteristic(
+            BluetoothGattCharacteristic(
+                BeaconGattProfile.ENCRYPTION_PUBLIC_KEY_CHARACTERISTIC_UUID,
+                BluetoothGattCharacteristic.PROPERTY_READ,
+                BluetoothGattCharacteristic.PERMISSION_READ
+            )
+        )
+        service.addCharacteristic(
+            BluetoothGattCharacteristic(
+                BeaconGattProfile.ENCRYPTION_PUBLIC_KEY_SIGNATURE_CHARACTERISTIC_UUID,
                 BluetoothGattCharacteristic.PROPERTY_READ,
                 BluetoothGattCharacteristic.PERMISSION_READ
             )

@@ -7,8 +7,8 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 @Database(
-    entities = [Identity::class, Peer::class, Conversation::class, Message::class],
-    version = 2,
+    entities = [Identity::class, Peer::class, Conversation::class, Message::class, RelayEnvelope::class],
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -18,6 +18,7 @@ abstract class BeaconDatabase : RoomDatabase() {
     abstract fun peerDao(): PeerDao
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
+    abstract fun relayEnvelopeDao(): RelayEnvelopeDao
 
     companion object {
         fun build(context: Context): BeaconDatabase =

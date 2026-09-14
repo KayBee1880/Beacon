@@ -2,10 +2,13 @@ package com.beacon.ble
 
 import android.bluetooth.BluetoothDevice
 import android.util.Log
+import com.beacon.crypto.ChatMessagePlaintext
 import com.beacon.crypto.CryptoService
 import com.beacon.data.ConversationRepository
 import com.beacon.data.Identity
 import com.beacon.data.MessageRepository
+import com.beacon.data.PeerRepository
+import com.beacon.data.RelayEnvelopeRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
@@ -23,13 +26,19 @@ class ChatGattServer(
     private val identity: Identity,
     private val conversationRepository: ConversationRepository,
     private val messageRepository: MessageRepository,
+    private val peerRepository: PeerRepository,
+    private val relayEnvelopeRepository: RelayEnvelopeRepository,
     private val resolvedIdentityByDeviceAddress: () -> Map<String, String>,
     private val scope: CoroutineScope,
     private val sendToDevice: (device: BluetoothDevice, bytes: ByteArray) -> Unit
 ) {
     private val cryptoService = CryptoService()
 
-    private data class Session(val sessionKey: SecretKey, val peerPublicKey: String)
+    private data class Session(
+        val sessionKey: SecretKey,
+        val peerPublicKey: String,
+        val relayGossipSession: RelayGossipSession
+    )
 
     // Keyed by device address: a connection's whole point, per docs/04 §8, is that a
     // session key lives only as long as the connection does; nothing here is persisted.
@@ -40,6 +49,9 @@ class ChatGattServer(
             is ChatFrame.Handshake -> handleHandshake(device, frame)
             is ChatFrame.EncryptedMessage -> handleMessage(device, frame)
             is ChatFrame.EncryptedAck -> handleAck(device, frame)
+            is ChatFrame.EncryptedRelayInventory -> sessionsByDeviceAddress[device.address]?.relayGossipSession?.handleInventory(frame)
+            is ChatFrame.EncryptedRelayRequest -> sessionsByDeviceAddress[device.address]?.relayGossipSession?.handleRequest(frame)
+            is ChatFrame.EncryptedRelayPush -> sessionsByDeviceAddress[device.address]?.relayGossipSession?.handlePush(frame)
             null -> Log.w(TAG, "Unrecognized or malformed frame from ${device.address}")
         }
     }
@@ -70,11 +82,24 @@ class ChatGattServer(
 
         val ourEphemeralKeyPair = cryptoService.generateEphemeralKeyPair()
         val sessionKey = cryptoService.deriveSessionKey(ourEphemeralKeyPair.private, peerEphemeralPublicKey)
-        sessionsByDeviceAddress[device.address] = Session(sessionKey, peerPublicKey)
+        val relayGossipSession = RelayGossipSession(
+            identity = identity,
+            conversationRepository = conversationRepository,
+            messageRepository = messageRepository,
+            peerRepository = peerRepository,
+            relayEnvelopeRepository = relayEnvelopeRepository,
+            sessionKey = sessionKey,
+            scope = scope,
+            sendFrame = { frame -> sendToDevice(device, frame.encode()) }
+        )
+        sessionsByDeviceAddress[device.address] = Session(sessionKey, peerPublicKey, relayGossipSession)
 
         val ourSignature = cryptoService.signEphemeralPublicKey(identity.keystoreAlias, ourEphemeralKeyPair.public)
         val response = ChatFrame.Handshake(ourEphemeralKeyPair.public.encoded, ourSignature)
         sendToDevice(device, response.encode())
+
+        // docs/07 §8: symmetric with ChatConnection's own post-READY gossip kickoff.
+        relayGossipSession.start()
     }
 
     private fun handleMessage(device: BluetoothDevice, frame: ChatFrame.EncryptedMessage) {

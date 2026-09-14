@@ -12,13 +12,16 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.util.Base64
 import android.util.Log
+import com.beacon.crypto.IdentityKeyStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.nio.charset.StandardCharsets
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 // Permission checks happen upstream, gating whether start() is ever called; see BlePermissions.kt.
@@ -26,7 +29,16 @@ import java.util.concurrent.ConcurrentHashMap
 class BleCentralRole(
     private val context: Context,
     private val scope: CoroutineScope,
-    private val onPeerResolved: suspend (publicKey: String, displayName: String, deviceAddress: String) -> Unit
+    // encryptionPublicKey is null if the peer doesn't yet expose one (pre-Milestone-6
+    // build) or its signature failed verification (docs/07 §4); a resolve is not failed
+    // outright for this, the peer's core identity already verified, only relaying to
+    // them stays unavailable until a resolve succeeds with a verified key.
+    private val onPeerResolved: suspend (
+        publicKey: String,
+        displayName: String,
+        deviceAddress: String,
+        encryptionPublicKey: String?
+    ) -> Unit
 ) {
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
 
@@ -75,6 +87,8 @@ class BleCentralRole(
 
     private fun resolveIdentity(device: BluetoothDevice, rssi: Int) {
         var resolvedPublicKey: String? = null
+        var resolvedDisplayName: String? = null
+        var resolvedEncryptionPublicKey: String? = null
 
         val gattCallback = object : BluetoothGattCallback() {
             override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -116,22 +130,32 @@ class BleCentralRole(
                 when (characteristic.uuid) {
                     BeaconGattProfile.PUBLIC_KEY_CHARACTERISTIC_UUID -> {
                         resolvedPublicKey = String(value, StandardCharsets.UTF_8)
-                        val displayNameCharacteristic = gatt
-                            .getService(BeaconGattProfile.IDENTITY_SERVICE_UUID)
-                            ?.getCharacteristic(BeaconGattProfile.DISPLAY_NAME_CHARACTERISTIC_UUID)
-                        if (displayNameCharacteristic == null) {
-                            gatt.disconnect()
-                        } else {
-                            gatt.readCharacteristic(displayNameCharacteristic)
-                        }
+                        readNext(gatt, BeaconGattProfile.DISPLAY_NAME_CHARACTERISTIC_UUID)
                     }
                     BeaconGattProfile.DISPLAY_NAME_CHARACTERISTIC_UUID -> {
+                        resolvedDisplayName = String(value, StandardCharsets.UTF_8)
+                        readNext(gatt, BeaconGattProfile.ENCRYPTION_PUBLIC_KEY_CHARACTERISTIC_UUID)
+                    }
+                    BeaconGattProfile.ENCRYPTION_PUBLIC_KEY_CHARACTERISTIC_UUID -> {
+                        resolvedEncryptionPublicKey = String(value, StandardCharsets.UTF_8)
+                        readNext(gatt, BeaconGattProfile.ENCRYPTION_PUBLIC_KEY_SIGNATURE_CHARACTERISTIC_UUID)
+                    }
+                    BeaconGattProfile.ENCRYPTION_PUBLIC_KEY_SIGNATURE_CHARACTERISTIC_UUID -> {
                         val publicKey = resolvedPublicKey
-                        val displayName = String(value, StandardCharsets.UTF_8)
-                        if (publicKey != null) {
+                        val displayName = resolvedDisplayName
+                        val encryptionPublicKey = resolvedEncryptionPublicKey
+                        val signatureBase64 = String(value, StandardCharsets.UTF_8)
+                        if (publicKey != null && displayName != null) {
+                            // D-030: verified here, once, at resolve time, not re-verified
+                            // by every later caller that reads it back off the Peer row.
+                            val verifiedEncryptionPublicKey = encryptionPublicKey?.takeIf {
+                                verifyEncryptionPublicKey(publicKey, it, signatureBase64)
+                            }
                             _rssiByPeerId.update { it + (publicKey to rssi) }
                             _identityPublicKeyByDeviceAddress.update { it + (device.address to publicKey) }
-                            scope.launch { onPeerResolved(publicKey, displayName, device.address) }
+                            scope.launch {
+                                onPeerResolved(publicKey, displayName, device.address, verifiedEncryptionPublicKey)
+                            }
                         }
                         gatt.disconnect()
                     }
@@ -141,6 +165,27 @@ class BleCentralRole(
 
         device.connectGatt(context, false, gattCallback)
     }
+
+    private fun readNext(gatt: BluetoothGatt, characteristicUuid: UUID) {
+        val characteristic = gatt
+            .getService(BeaconGattProfile.IDENTITY_SERVICE_UUID)
+            ?.getCharacteristic(characteristicUuid)
+        if (characteristic == null) {
+            gatt.disconnect()
+        } else {
+            gatt.readCharacteristic(characteristic)
+        }
+    }
+
+    private fun verifyEncryptionPublicKey(peerPublicKey: String, encryptionPublicKeyBase64: String, signatureBase64: String): Boolean =
+        try {
+            val encryptionPublicKeyBytes = Base64.decode(encryptionPublicKeyBase64, Base64.NO_WRAP)
+            val signatureBytes = Base64.decode(signatureBase64, Base64.NO_WRAP)
+            IdentityKeyStore.verify(peerPublicKey, encryptionPublicKeyBytes, signatureBytes)
+        } catch (e: Exception) {
+            Log.w(TAG, "Malformed encryption key or signature", e)
+            false
+        }
 
     private companion object {
         const val TAG = "BleCentralRole"

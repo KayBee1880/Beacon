@@ -9,10 +9,14 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.util.Log
+import com.beacon.crypto.ChatMessagePlaintext
 import com.beacon.crypto.CryptoService
+import com.beacon.data.ConversationRepository
 import com.beacon.data.Identity
 import com.beacon.data.Message
 import com.beacon.data.MessageRepository
+import com.beacon.data.PeerRepository
+import com.beacon.data.RelayEnvelopeRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +32,10 @@ private sealed class PendingWrite {
     data class Handshake(val bytes: ByteArray) : PendingWrite()
     data class OutgoingMessage(val message: Message, val bytes: ByteArray) : PendingWrite()
     data class Ack(val bytes: ByteArray) : PendingWrite()
+    // Relay gossip frames (docs/07 §8): no Message to track completion against, unlike
+    // OutgoingMessage, a relay frame's own retry/dedup already lives one layer up, in the
+    // next gossip round rather than this connection's write queue.
+    data class Relay(val bytes: ByteArray) : PendingWrite()
 }
 
 /**
@@ -43,7 +51,10 @@ class ChatConnection(
     private val identity: Identity,
     private val peerPublicKey: String,
     private val conversationId: String,
+    private val conversationRepository: ConversationRepository,
     private val messageRepository: MessageRepository,
+    private val peerRepository: PeerRepository,
+    private val relayEnvelopeRepository: RelayEnvelopeRepository,
     private val scope: CoroutineScope
 ) {
     private val cryptoService = CryptoService()
@@ -55,6 +66,10 @@ class ChatConnection(
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private var ourEphemeralKeyPair: KeyPair? = null
     private var sessionKey: SecretKey? = null
+
+    // Built once the handshake completes (docs/07 §8); relay gossip is additive to the
+    // direct chat this connection exists for, never a replacement for it.
+    private var relayGossipSession: RelayGossipSession? = null
 
     // A GATT connection only allows one write in flight at a time; RX carries three
     // different frame kinds (handshake, messages, acks), so they're queued and sent one
@@ -74,6 +89,7 @@ class ChatConnection(
         rxCharacteristic = null
         sessionKey = null
         ourEphemeralKeyPair = null
+        relayGossipSession = null
         writeQueue.clear()
         writeInFlight = null
     }
@@ -111,6 +127,7 @@ class ChatConnection(
             is PendingWrite.Handshake -> next.bytes
             is PendingWrite.OutgoingMessage -> next.bytes
             is PendingWrite.Ack -> next.bytes
+            is PendingWrite.Relay -> next.bytes
         }
         characteristic.setValue(bytes)
         gatt?.writeCharacteristic(characteristic)
@@ -217,6 +234,9 @@ class ChatConnection(
                 is ChatFrame.Handshake -> handleHandshakeResponse(frame)
                 is ChatFrame.EncryptedMessage -> handleMessage(frame)
                 is ChatFrame.EncryptedAck -> handleAck(frame)
+                is ChatFrame.EncryptedRelayInventory -> relayGossipSession?.handleInventory(frame)
+                is ChatFrame.EncryptedRelayRequest -> relayGossipSession?.handleRequest(frame)
+                is ChatFrame.EncryptedRelayPush -> relayGossipSession?.handlePush(frame)
                 null -> Log.w(TAG, "Unrecognized or malformed frame from peer")
             }
         }
@@ -244,8 +264,25 @@ class ChatConnection(
             gatt?.disconnect()
             return
         }
-        sessionKey = cryptoService.deriveSessionKey(ourKeyPair.private, peerEphemeralPublicKey)
+        val key = cryptoService.deriveSessionKey(ourKeyPair.private, peerEphemeralPublicKey)
+        sessionKey = key
         _state.value = ChatConnectionState.READY
+
+        // docs/07 §8: gossip is kicked off unconditionally once READY, this connection
+        // might exist purely for a direct chat send, purely for relay gossip (D-034), or
+        // both, gossip doesn't need to know which.
+        val session = RelayGossipSession(
+            identity = identity,
+            conversationRepository = conversationRepository,
+            messageRepository = messageRepository,
+            peerRepository = peerRepository,
+            relayEnvelopeRepository = relayEnvelopeRepository,
+            sessionKey = key,
+            scope = scope,
+            sendFrame = { frame -> enqueueWrite(PendingWrite.Relay(frame.encode())) }
+        )
+        relayGossipSession = session
+        session.start()
     }
 
     private fun handleMessage(frame: ChatFrame.EncryptedMessage) {

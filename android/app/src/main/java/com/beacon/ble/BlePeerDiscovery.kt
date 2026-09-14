@@ -6,6 +6,7 @@ import com.beacon.data.Identity
 import com.beacon.data.IdentityRepository
 import com.beacon.data.MessageRepository
 import com.beacon.data.PeerRepository
+import com.beacon.data.RelayEnvelopeRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 
@@ -22,6 +23,7 @@ class BlePeerDiscovery(
     peerRepository: PeerRepository,
     conversationRepository: ConversationRepository,
     messageRepository: MessageRepository,
+    relayEnvelopeRepository: RelayEnvelopeRepository,
     activeChatConnections: ActiveChatConnections,
     scope: CoroutineScope
 ) : PeerDiscovery {
@@ -33,6 +35,21 @@ class BlePeerDiscovery(
         identityRepository = identityRepository,
         conversationRepository = conversationRepository,
         messageRepository = messageRepository,
+        peerRepository = peerRepository,
+        relayEnvelopeRepository = relayEnvelopeRepository,
+        activeConnections = activeChatConnections,
+        scope = scope
+    )
+
+    // D-034: reacts to every resolve, not just ones with a message waiting, the behavior
+    // that actually makes this device part of a mesh rather than just a retrying sender.
+    private val relayGossipCoordinator = RelayGossipCoordinator(
+        context = context,
+        identityRepository = identityRepository,
+        conversationRepository = conversationRepository,
+        messageRepository = messageRepository,
+        peerRepository = peerRepository,
+        relayEnvelopeRepository = relayEnvelopeRepository,
         activeConnections = activeChatConnections,
         scope = scope
     )
@@ -40,9 +57,10 @@ class BlePeerDiscovery(
     private val central = BleCentralRole(
         context = context,
         scope = scope,
-        onPeerResolved = { publicKey, displayName, deviceAddress ->
-            peerRepository.recordSeen(publicKey, displayName, System.currentTimeMillis())
+        onPeerResolved = { publicKey, displayName, deviceAddress, encryptionPublicKey ->
+            peerRepository.recordSeen(publicKey, displayName, System.currentTimeMillis(), encryptionPublicKey)
             retryCoordinator.onPeerResolved(publicKey, deviceAddress)
+            relayGossipCoordinator.onPeerResolved(publicKey, deviceAddress)
         }
     )
 
@@ -53,6 +71,8 @@ class BlePeerDiscovery(
         scope = scope,
         conversationRepository = conversationRepository,
         messageRepository = messageRepository,
+        peerRepository = peerRepository,
+        relayEnvelopeRepository = relayEnvelopeRepository,
         resolvedIdentityByDeviceAddress = { central.identityPublicKeyByDeviceAddress.value }
     )
 

@@ -2,6 +2,7 @@ package com.beacon.data
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
@@ -12,6 +13,15 @@ interface MessageDao {
     @Insert
     suspend fun insert(message: Message)
 
+    // Milestone 6: receiveIncoming's own insert, distinct from the one above. A relayed
+    // message can now legitimately arrive twice (direct plus relay, or two relay paths),
+    // where createOutgoing's fresh UUID never collides and a collision there would be a
+    // real bug worth ABORT catching; here a duplicate id is expected mesh behavior, not one.
+    // Returns the new rowId, or -1 if ignored as a duplicate (Room's documented convention
+    // for a suspend @Insert with a Long return type and an IGNORE conflict strategy).
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoreDuplicate(message: Message): Long
+
     @Update
     suspend fun update(message: Message)
 
@@ -20,6 +30,12 @@ interface MessageDao {
 
     @Query("SELECT * FROM message WHERE id = :messageId")
     suspend fun get(messageId: String): Message?
+
+    // Milestone 6: which of these ids (from a peer's relay gossip inventory) this device
+    // has already fully received or sent as a real Message, so gossip doesn't re-request
+    // something already delivered through a different mesh path.
+    @Query("SELECT id FROM message WHERE id IN (:ids)")
+    suspend fun getExistingIds(ids: List<String>): List<String>
 
     // Milestone 4: explicitly SENDING/SENT, not "!= DELIVERED"; the earlier version of
     // this query also matched FAILED, the one status that must never be retried.

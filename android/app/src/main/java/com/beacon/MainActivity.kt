@@ -46,6 +46,7 @@ import com.beacon.data.IdentityRepository
 import com.beacon.data.MessageRepository
 import com.beacon.data.Peer
 import com.beacon.data.PeerRepository
+import com.beacon.data.RelayEnvelopeRepository
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
@@ -61,6 +62,7 @@ class MainActivity : ComponentActivity() {
                         peerRepository = app.peerRepository,
                         conversationRepository = app.conversationRepository,
                         messageRepository = app.messageRepository,
+                        relayEnvelopeRepository = app.relayEnvelopeRepository,
                         activeChatConnections = app.activeChatConnections,
                         peerDiscovery = app.peerDiscovery
                     )
@@ -76,6 +78,7 @@ private fun BeaconApp(
     peerRepository: PeerRepository,
     conversationRepository: ConversationRepository,
     messageRepository: MessageRepository,
+    relayEnvelopeRepository: RelayEnvelopeRepository,
     activeChatConnections: ActiveChatConnections,
     peerDiscovery: PeerDiscovery
 ) {
@@ -119,6 +122,8 @@ private fun BeaconApp(
             peerDiscovery = peerDiscovery,
             conversationRepository = conversationRepository,
             messageRepository = messageRepository,
+            peerRepository = peerRepository,
+            relayEnvelopeRepository = relayEnvelopeRepository,
             activeChatConnections = activeChatConnections,
             onBack = { selectedPeer = null }
         )

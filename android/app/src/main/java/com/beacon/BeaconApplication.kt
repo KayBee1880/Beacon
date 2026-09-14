@@ -9,6 +9,7 @@ import com.beacon.data.ConversationRepository
 import com.beacon.data.IdentityRepository
 import com.beacon.data.MessageRepository
 import com.beacon.data.PeerRepository
+import com.beacon.data.RelayEnvelopeRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,8 +31,12 @@ class BeaconApplication : Application() {
     lateinit var messageRepository: MessageRepository
         private set
 
-    // D-024: one shared registry so ChatScreen and MessageRetryCoordinator never both
-    // hold an open connection to the same peer at once.
+    lateinit var relayEnvelopeRepository: RelayEnvelopeRepository
+        private set
+
+    // D-024: one shared registry so ChatScreen, MessageRetryCoordinator, and (Milestone 6)
+    // RelayGossipCoordinator never more than one of them hold an open connection to the
+    // same peer at once.
     lateinit var activeChatConnections: ActiveChatConnections
         private set
 
@@ -46,7 +51,14 @@ class BeaconApplication : Application() {
         identityRepository = IdentityRepository(database.identityDao())
         peerRepository = PeerRepository(database.peerDao())
         conversationRepository = ConversationRepository(database.conversationDao())
-        messageRepository = MessageRepository(database.messageDao(), database.conversationDao())
+        relayEnvelopeRepository = RelayEnvelopeRepository(database.relayEnvelopeDao())
+        messageRepository = MessageRepository(
+            database.messageDao(),
+            database.conversationDao(),
+            peerRepository,
+            relayEnvelopeRepository,
+            identityRepository
+        )
         activeChatConnections = ActiveChatConnections()
         peerDiscovery = BlePeerDiscovery(
             this,
@@ -54,6 +66,7 @@ class BeaconApplication : Application() {
             peerRepository,
             conversationRepository,
             messageRepository,
+            relayEnvelopeRepository,
             activeChatConnections,
             applicationScope
         )

@@ -1,12 +1,18 @@
 package com.beacon.data
 
+import com.beacon.crypto.ChatMessagePlaintext
+import com.beacon.crypto.CryptoService
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
 class MessageRepository(
     private val messageDao: MessageDao,
-    private val conversationDao: ConversationDao
+    private val conversationDao: ConversationDao,
+    private val peerRepository: PeerRepository,
+    private val relayEnvelopeRepository: RelayEnvelopeRepository,
+    private val identityRepository: IdentityRepository
 ) {
+    private val cryptoService = CryptoService()
 
     fun observeForConversation(conversationId: String): Flow<List<Message>> =
         messageDao.observeForConversation(conversationId)
@@ -44,10 +50,16 @@ class MessageRepository(
             createdAt = now,
             deliveredAt = now
         )
-        messageDao.insert(message)
-        conversationDao.touch(conversationId, now)
+        // A duplicate delivery (direct plus relay, or two relay paths for the same
+        // message) must not re-touch the conversation's lastMessageAt to "now": that
+        // would bump a conversation to the top of the list for a message it already had.
+        if (messageDao.insertIgnoreDuplicate(message) != -1L) {
+            conversationDao.touch(conversationId, now)
+        }
         return message
     }
+
+    suspend fun getExistingIds(ids: List<String>): List<String> = messageDao.getExistingIds(ids)
 
     suspend fun markSent(message: Message): Message {
         val updated = message.copy(status = MessageStatus.SENT)
@@ -77,7 +89,7 @@ class MessageRepository(
     suspend fun scheduleRetry(message: Message): Message {
         val newRetryCount = message.retryCount + 1
         if (newRetryCount > MAX_RETRY_COUNT) {
-            return markFailed(message)
+            return fallbackToRelayOrFail(message)
         }
         val updated = message.copy(
             retryCount = newRetryCount,
@@ -85,6 +97,49 @@ class MessageRepository(
         )
         messageDao.update(updated)
         return updated
+    }
+
+    // D-035: once direct retry is exhausted, hand off to the mesh instead of giving up
+    // outright, but only if this peer's encryption key is actually on file (they've been
+    // resolved at least once, ever); with nothing to encrypt to, there's nothing relay
+    // can do that direct retry hasn't already tried, so it falls to FAILED exactly as it
+    // did before this milestone.
+    private suspend fun fallbackToRelayOrFail(message: Message): Message {
+        val conversation = conversationDao.get(message.conversationId) ?: return markFailed(message)
+        val recipientEncryptionPublicKey = peerRepository.get(conversation.peerId)?.encryptionPublicKey
+            ?: return markFailed(message)
+        val identity = identityRepository.get() ?: return markFailed(message)
+
+        relayEnvelopeRepository.store(buildRelayEnvelope(identity, conversation.peerId, recipientEncryptionPublicKey, message))
+        // SENT, not DELIVERED: this device's job is done, but there is no return path
+        // yet for a delivery acknowledgment to travel back across the mesh (docs/07 §9).
+        return markSent(message)
+    }
+
+    private fun buildRelayEnvelope(
+        identity: Identity,
+        finalRecipientId: String,
+        recipientEncryptionPublicKeyBase64: String,
+        message: Message
+    ): RelayEnvelope {
+        val ephemeralKeyPair = cryptoService.generateEphemeralKeyPair()
+        val recipientEncryptionPublicKey = cryptoService.decodeEncryptionPublicKey(recipientEncryptionPublicKeyBase64)
+        val envelopeKey = cryptoService.deriveEnvelopeKey(ephemeralKeyPair.private, recipientEncryptionPublicKey)
+        val ciphertext = cryptoService.encrypt(envelopeKey, ChatMessagePlaintext.encodeMessage(message.id, message.content))
+        val signature = cryptoService.signEphemeralPublicKey(identity.keystoreAlias, ephemeralKeyPair.public)
+
+        return RelayEnvelope(
+            messageId = message.id,
+            originSenderId = identity.publicKey,
+            originDisplayName = identity.displayName,
+            finalRecipientId = finalRecipientId,
+            senderEphemeralPublicKey = ephemeralKeyPair.public.encoded,
+            senderEphemeralPublicKeySignature = signature,
+            ciphertext = ciphertext,
+            hopCount = 0,
+            createdAt = message.createdAt,
+            receivedAt = System.currentTimeMillis()
+        )
     }
 
     private fun backoffDelayMillis(retryCount: Int): Long {

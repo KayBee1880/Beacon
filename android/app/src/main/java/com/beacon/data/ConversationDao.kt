@@ -18,6 +18,12 @@ interface ConversationDao {
     @Query("SELECT * FROM conversation WHERE peerId = :peerId LIMIT 1")
     suspend fun findByPeer(peerId: String): Conversation?
 
+    // Milestone 6: MessageRepository's relay fallback (D-035) only has a Message's
+    // conversationId to start from, and needs that conversation's peerId to know who a
+    // relay envelope should actually be addressed to.
+    @Query("SELECT * FROM conversation WHERE id = :conversationId")
+    suspend fun get(conversationId: String): Conversation?
+
     @Query("UPDATE conversation SET lastMessageAt = :timestamp WHERE id = :conversationId")
     suspend fun touch(conversationId: String, timestamp: Long)
 }

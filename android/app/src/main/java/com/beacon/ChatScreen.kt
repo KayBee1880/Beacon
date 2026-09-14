@@ -44,6 +44,8 @@ import com.beacon.data.MessageDirection
 import com.beacon.data.MessageRepository
 import com.beacon.data.MessageStatus
 import com.beacon.data.Peer
+import com.beacon.data.PeerRepository
+import com.beacon.data.RelayEnvelopeRepository
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 
@@ -57,6 +59,8 @@ fun ChatScreen(
     peerDiscovery: PeerDiscovery,
     conversationRepository: ConversationRepository,
     messageRepository: MessageRepository,
+    peerRepository: PeerRepository,
+    relayEnvelopeRepository: RelayEnvelopeRepository,
     activeChatConnections: ActiveChatConnections,
     onBack: () -> Unit
 ) {
@@ -89,7 +93,10 @@ fun ChatScreen(
             identity = identity,
             peerPublicKey = peer.id,
             conversationId = conversation.id,
+            conversationRepository = conversationRepository,
             messageRepository = messageRepository,
+            peerRepository = peerRepository,
+            relayEnvelopeRepository = relayEnvelopeRepository,
             scope = this
         )
         // D-024: if a background retry already holds a connection to this peer, don't
