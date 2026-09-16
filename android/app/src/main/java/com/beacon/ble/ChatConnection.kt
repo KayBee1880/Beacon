@@ -17,11 +17,14 @@ import com.beacon.data.Message
 import com.beacon.data.MessageRepository
 import com.beacon.data.PeerRepository
 import com.beacon.data.RelayEnvelopeRepository
+import com.beacon.wifidirect.WifiDirectFileTransfer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 import java.security.KeyPair
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.SecretKey
 
 private const val REQUESTED_MTU = 517
@@ -36,6 +39,10 @@ private sealed class PendingWrite {
     // OutgoingMessage, a relay frame's own retry/dedup already lives one layer up, in the
     // next gossip round rather than this connection's write queue.
     data class Relay(val bytes: ByteArray) : PendingWrite()
+    // Milestone 7: an attachment offer, same "no Message-tracked completion" reasoning
+    // as Relay above, offer delivery/failure is decided by the response frame, not by
+    // whether this particular GATT write itself succeeded.
+    data class AttachmentOfferWrite(val bytes: ByteArray) : PendingWrite()
 }
 
 /**
@@ -71,6 +78,13 @@ class ChatConnection(
     // direct chat this connection exists for, never a replacement for it.
     private var relayGossipSession: RelayGossipSession? = null
 
+    // Milestone 7: this connection only ever sends offers (via ChatScreen tapping attach)
+    // and receives responses to them, never the reverse (docs/08's own note on this
+    // asymmetry: an offer from the peer always arrives at this device's ChatGattServer,
+    // over a separate BLE link, never here). Keyed by messageId so a response can find
+    // the Message/file it belongs to.
+    private val pendingOutgoingAttachments = ConcurrentHashMap<String, Message>()
+
     // A GATT connection only allows one write in flight at a time; RX carries three
     // different frame kinds (handshake, messages, acks), so they're queued and sent one
     // at a time rather than risking overlapping writeCharacteristic calls.
@@ -90,6 +104,7 @@ class ChatConnection(
         sessionKey = null
         ourEphemeralKeyPair = null
         relayGossipSession = null
+        pendingOutgoingAttachments.clear()
         writeQueue.clear()
         writeInFlight = null
     }
@@ -106,6 +121,57 @@ class ChatConnection(
         }
         val payload = cryptoService.encrypt(key, ChatMessagePlaintext.encodeMessage(message.id, message.content))
         enqueueWrite(PendingWrite.OutgoingMessage(message, ChatFrame.EncryptedMessage(payload).encode()))
+    }
+
+    // docs/08 §3: this device's own Wi-Fi Direct device address travels in the offer so
+    // the peer can find this device in their own discovery, once BLE has already
+    // authenticated who's asking. No queue-until-ready here either, same reasoning as
+    // sendMessage: attempted before READY, it just fails, ChatScreen already gates the
+    // attach button on connectionState per docs/08 §10.
+    suspend fun sendAttachment(message: Message) {
+        val key = sessionKey ?: run {
+            messageRepository.markFailed(message)
+            return
+        }
+        val localWifiAddress = WifiDirectFileTransfer(context).getLocalDeviceAddress()
+        if (localWifiAddress == null) {
+            messageRepository.markFailed(message)
+            return
+        }
+        val offer = AttachmentOffer(
+            messageId = message.id,
+            fileName = message.attachmentFileName ?: "",
+            mimeType = message.attachmentMimeType ?: "application/octet-stream",
+            sizeBytes = message.attachmentSizeBytes ?: 0L,
+            contentHash = message.attachmentContentHash ?: ByteArray(0),
+            wifiDeviceAddress = localWifiAddress
+        )
+        pendingOutgoingAttachments[message.id] = message
+        val payload = cryptoService.encrypt(key, AttachmentFramePlaintext.encodeOffer(offer))
+        enqueueWrite(PendingWrite.AttachmentOfferWrite(ChatFrame.EncryptedAttachmentOffer(payload).encode()))
+    }
+
+    private fun handleAttachmentResponse(frame: ChatFrame.EncryptedAttachmentResponse) {
+        val key = sessionKey ?: return
+        val plaintext = decryptOrNull(key, frame.payload) ?: return
+        val response = AttachmentFramePlaintext.decodeResponse(plaintext) ?: return
+        val message = pendingOutgoingAttachments.remove(response.messageId) ?: return
+
+        scope.launch {
+            val peerWifiAddress = response.wifiDeviceAddress
+            if (!response.accepted || peerWifiAddress == null) {
+                messageRepository.markFailed(message)
+                return@launch
+            }
+            // The offer itself reached the peer and they responded, that's what
+            // "delivered" means for the message construct; the file bytes' own progress
+            // lives entirely in attachmentState from here, tracked only on the receiving
+            // side (D-037), this device's own copy was already LOCAL and stays that way.
+            messageRepository.markDelivered(message)
+            val file = File(message.attachmentLocalPath ?: return@launch)
+            val success = WifiDirectFileTransfer(context).send(peerWifiAddress, key, file)
+            if (!success) messageRepository.markFailed(message)
+        }
     }
 
     private fun enqueueWrite(write: PendingWrite) {
@@ -128,6 +194,7 @@ class ChatConnection(
             is PendingWrite.OutgoingMessage -> next.bytes
             is PendingWrite.Ack -> next.bytes
             is PendingWrite.Relay -> next.bytes
+            is PendingWrite.AttachmentOfferWrite -> next.bytes
         }
         characteristic.setValue(bytes)
         gatt?.writeCharacteristic(characteristic)
@@ -237,6 +304,11 @@ class ChatConnection(
                 is ChatFrame.EncryptedRelayInventory -> relayGossipSession?.handleInventory(frame)
                 is ChatFrame.EncryptedRelayRequest -> relayGossipSession?.handleRequest(frame)
                 is ChatFrame.EncryptedRelayPush -> relayGossipSession?.handlePush(frame)
+                is ChatFrame.EncryptedAttachmentResponse -> handleAttachmentResponse(frame)
+                // This connection only ever sends offers, never receives one (docs/08's
+                // asymmetry note); an offer arriving here would mean the peer's GATT
+                // server code has a bug, not something to act on.
+                is ChatFrame.EncryptedAttachmentOffer -> Log.w(TAG, "Unexpected attachment offer on an outgoing connection")
                 null -> Log.w(TAG, "Unrecognized or malformed frame from peer")
             }
         }

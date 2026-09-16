@@ -15,4 +15,12 @@ class Converters {
 
     @TypeConverter
     fun toMessageStatus(value: String): MessageStatus = MessageStatus.valueOf(value)
+
+    // Nullable, unlike the two above: Message.attachmentState is null for every plain
+    // text message, the overwhelming majority of rows (Milestone 7, D-037).
+    @TypeConverter
+    fun fromAttachmentState(value: AttachmentState?): String? = value?.name
+
+    @TypeConverter
+    fun toAttachmentState(value: String?): AttachmentState? = value?.let { AttachmentState.valueOf(it) }
 }

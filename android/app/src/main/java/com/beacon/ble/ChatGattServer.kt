@@ -1,16 +1,20 @@
 package com.beacon.ble
 
 import android.bluetooth.BluetoothDevice
+import android.content.Context
 import android.util.Log
 import com.beacon.crypto.ChatMessagePlaintext
 import com.beacon.crypto.CryptoService
+import com.beacon.data.AttachmentState
 import com.beacon.data.ConversationRepository
 import com.beacon.data.Identity
 import com.beacon.data.MessageRepository
 import com.beacon.data.PeerRepository
 import com.beacon.data.RelayEnvelopeRepository
+import com.beacon.wifidirect.WifiDirectFileTransfer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.SecretKey
 
@@ -23,6 +27,7 @@ import javax.crypto.SecretKey
  * above it, domain stays ignorant of the transport" split BleCentralRole already uses.
  */
 class ChatGattServer(
+    private val context: Context,
     private val identity: Identity,
     private val conversationRepository: ConversationRepository,
     private val messageRepository: MessageRepository,
@@ -52,6 +57,11 @@ class ChatGattServer(
             is ChatFrame.EncryptedRelayInventory -> sessionsByDeviceAddress[device.address]?.relayGossipSession?.handleInventory(frame)
             is ChatFrame.EncryptedRelayRequest -> sessionsByDeviceAddress[device.address]?.relayGossipSession?.handleRequest(frame)
             is ChatFrame.EncryptedRelayPush -> sessionsByDeviceAddress[device.address]?.relayGossipSession?.handlePush(frame)
+            is ChatFrame.EncryptedAttachmentOffer -> handleAttachmentOffer(device, frame)
+            // This side only ever sends offers of its own from a ChatConnection, never
+            // from here (docs/08's asymmetry note); a response arriving at the peripheral
+            // side would mean the peer's central-role code has a bug.
+            is ChatFrame.EncryptedAttachmentResponse -> Log.w(TAG, "Unexpected attachment response on an incoming connection")
             null -> Log.w(TAG, "Unrecognized or malformed frame from ${device.address}")
         }
     }
@@ -116,6 +126,57 @@ class ChatGattServer(
 
             val ackPayload = cryptoService.encrypt(session.sessionKey, ChatMessagePlaintext.encodeAck(messageId))
             sendToDevice(device, ChatFrame.EncryptedAck(ackPayload).encode())
+        }
+    }
+
+    // D-043: auto-accept, no user prompt, the same trust posture the app already takes
+    // for incoming text messages (never a confirmation dialog); the only reason to
+    // decline is this device having no usable Wi-Fi Direct address at all (docs/08 §3).
+    private fun handleAttachmentOffer(device: BluetoothDevice, frame: ChatFrame.EncryptedAttachmentOffer) {
+        val session = sessionsByDeviceAddress[device.address] ?: run {
+            Log.w(TAG, "Attachment offer from ${device.address} with no completed handshake, dropping")
+            return
+        }
+        val plaintext = decryptOrNull(session.sessionKey, frame.payload) ?: return
+        val offer = AttachmentFramePlaintext.decodeOffer(plaintext) ?: run {
+            Log.w(TAG, "Malformed attachment offer from ${device.address}")
+            return
+        }
+
+        scope.launch {
+            val conversation = conversationRepository.getOrCreate(session.peerPublicKey)
+            val destinationFile = File(context.filesDir, "attachments/${offer.messageId}")
+            val message = messageRepository.receiveIncomingAttachmentOffer(
+                conversationId = conversation.id,
+                messageId = offer.messageId,
+                fileName = offer.fileName,
+                mimeType = offer.mimeType,
+                sizeBytes = offer.sizeBytes,
+                contentHash = offer.contentHash,
+                localPath = destinationFile.absolutePath
+            )
+
+            val wifiDirectFileTransfer = WifiDirectFileTransfer(context)
+            val myWifiAddress = wifiDirectFileTransfer.getLocalDeviceAddress()
+
+            val response = AttachmentResponse(offer.messageId, myWifiAddress != null, myWifiAddress)
+            val responsePayload = cryptoService.encrypt(session.sessionKey, AttachmentFramePlaintext.encodeResponse(response))
+            sendToDevice(device, ChatFrame.EncryptedAttachmentResponse(responsePayload).encode())
+
+            if (myWifiAddress == null) {
+                messageRepository.markAttachmentState(message, AttachmentState.FAILED)
+                return@launch
+            }
+
+            messageRepository.markAttachmentState(message, AttachmentState.TRANSFERRING)
+            destinationFile.parentFile?.mkdirs()
+            val received = wifiDirectFileTransfer.receive(
+                sessionKey = session.sessionKey,
+                destinationFile = destinationFile,
+                expectedSizeBytes = offer.sizeBytes,
+                expectedHash = offer.contentHash
+            )
+            messageRepository.markAttachmentState(message, if (received) AttachmentState.RECEIVED else AttachmentState.FAILED)
         }
     }
 

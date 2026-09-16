@@ -143,6 +143,7 @@ class BlePeripheralRole(
         encryptionPublicKeySignatureBytes = identity.encryptionPublicKeySignature.toByteArray(Charsets.UTF_8)
 
         chatGattServer = ChatGattServer(
+            context = context,
             identity = identity,
             conversationRepository = conversationRepository,
             messageRepository = messageRepository,

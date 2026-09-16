@@ -4,7 +4,10 @@
 
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <!-- maxSdkVersion 32, not 30: BLE itself stops needing this at API 31 (see
+         BLUETOOTH_SCAN below), but Wi-Fi Direct discovery (docs/08 §8) still requires it
+         through API 32, only replaced by NEARBY_WIFI_DEVICES at API 33. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="32" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"
@@ -12,7 +15,18 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
+    <!-- Milestone 7 (docs/08 §8): Wi-Fi Direct bulk transport. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="tiramisu" />
+
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+    <!-- Not required: a device without Wi-Fi Direct hardware can still use the app for
+         text messaging, only attachments (Milestone 7) are unavailable there. -->
+    <uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
 
     <application
         android:name=".BeaconApplication"

@@ -2,6 +2,10 @@ package com.beacon
 
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +41,7 @@ import com.beacon.ble.ActiveChatConnections
 import com.beacon.ble.ChatConnection
 import com.beacon.ble.ChatConnectionState
 import com.beacon.ble.PeerDiscovery
+import com.beacon.data.AttachmentState
 import com.beacon.data.ConversationRepository
 import com.beacon.data.Identity
 import com.beacon.data.Message
@@ -46,8 +51,13 @@ import com.beacon.data.MessageStatus
 import com.beacon.data.Peer
 import com.beacon.data.PeerRepository
 import com.beacon.data.RelayEnvelopeRepository
+import com.beacon.wifidirect.WifiDirectPermissions
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
+import java.security.MessageDigest
+import java.util.UUID
 
 // Journey 3's chat screen, opened by tapping a peer on PeerDiscoveryScreen. Owns exactly
 // one ChatConnection (docs/04) for the peer it was opened with, a fresh instance every
@@ -121,6 +131,24 @@ fun ChatScreen(
         conversationId?.let { messageRepository.observeForConversation(it) } ?: emptyFlow<List<Message>>()
     }.collectAsState(initial = emptyList())
 
+    // docs/08 §10: attachment permissions are requested here, on demand, the first time
+    // the attach button is actually tapped, not folded into BeaconApp's app-wide gate,
+    // most users may never send a file at all.
+    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val activeConversationId = conversationId ?: return@rememberLauncherForActivityResult
+        val activeConnection = connection ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val message = copyPickedFileAsAttachment(context, uri, activeConversationId, messageRepository)
+            if (message != null) activeConnection.sendAttachment(message)
+        }
+    }
+    val wifiPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.all { it }) filePickerLauncher.launch(arrayOf("*/*"))
+    }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text(stringResource(R.string.chat_back_button)) }
@@ -155,10 +183,68 @@ fun ChatScreen(
                     val message = messageRepository.createOutgoing(activeConversationId, text)
                     activeConnection.sendMessage(message)
                 }
+            },
+            onAttach = {
+                if (WifiDirectPermissions.allGranted(context)) {
+                    filePickerLauncher.launch(arrayOf("*/*"))
+                } else {
+                    wifiPermissionLauncher.launch(WifiDirectPermissions.required())
+                }
             }
         )
     }
 }
+
+// docs/08 §9: app-private storage, named by the same messageId that will travel in the
+// offer, so the sending side's own local file and the eventual Message row always agree
+// on where the bytes are. Hashing while copying (a running MessageDigest.update per
+// chunk) avoids a second full read of the file just to compute what CryptoService.encrypt
+// and the receiver's own verification (docs/08 §5) both need.
+private suspend fun copyPickedFileAsAttachment(
+    context: Context,
+    uri: Uri,
+    conversationId: String,
+    messageRepository: MessageRepository
+): Message? {
+    val contentResolver = context.contentResolver
+    val fileName = queryDisplayName(context, uri) ?: uri.lastPathSegment ?: "file"
+    val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+    val messageId = UUID.randomUUID().toString()
+    val destinationFile = File(context.filesDir, "attachments/$messageId")
+    destinationFile.parentFile?.mkdirs()
+
+    val digest = MessageDigest.getInstance("SHA-256")
+    var sizeBytes = 0L
+    val input = contentResolver.openInputStream(uri) ?: return null
+    input.use { stream ->
+        FileOutputStream(destinationFile).use { output ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = stream.read(buffer)
+                if (read <= 0) break
+                output.write(buffer, 0, read)
+                digest.update(buffer, 0, read)
+                sizeBytes += read
+            }
+        }
+    }
+
+    return messageRepository.createOutgoingAttachment(
+        messageId = messageId,
+        conversationId = conversationId,
+        fileName = fileName,
+        mimeType = mimeType,
+        sizeBytes = sizeBytes,
+        contentHash = digest.digest(),
+        localPath = destinationFile.absolutePath
+    )
+}
+
+private fun queryDisplayName(context: Context, uri: Uri): String? =
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (nameColumn >= 0 && cursor.moveToFirst()) cursor.getString(nameColumn) else null
+    }
 
 @Composable
 private fun connectionStatusText(state: ChatConnectionState): String = stringResource(
@@ -179,13 +265,33 @@ private fun MessageRow(message: Message) {
         horizontalArrangement = if (isOutgoing) Arrangement.End else Arrangement.Start
     ) {
         Column(horizontalAlignment = if (isOutgoing) Alignment.End else Alignment.Start) {
-            Text(message.content)
-            if (isOutgoing) {
-                Text(messageStatusText(message.status), style = MaterialTheme.typography.bodySmall)
+            // docs/08 §10: an attachment message reuses this row's existing
+            // outgoing/incoming alignment, only the content line itself branches, a chat
+            // with attachments still reads as one continuous thread, not a separate screen.
+            val attachmentState = message.attachmentState
+            if (attachmentState != null) {
+                Text(message.attachmentFileName ?: "")
+                Text(attachmentStateText(attachmentState), style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text(message.content)
+                if (isOutgoing) {
+                    Text(messageStatusText(message.status), style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
     }
 }
+
+@Composable
+private fun attachmentStateText(state: AttachmentState): String = stringResource(
+    when (state) {
+        AttachmentState.LOCAL -> R.string.attachment_state_local
+        AttachmentState.OFFERED -> R.string.attachment_state_offered
+        AttachmentState.TRANSFERRING -> R.string.attachment_state_transferring
+        AttachmentState.RECEIVED -> R.string.attachment_state_received
+        AttachmentState.FAILED -> R.string.attachment_state_failed
+    }
+)
 
 @Composable
 private fun messageStatusText(status: MessageStatus): String = stringResource(
@@ -198,10 +304,16 @@ private fun messageStatusText(status: MessageStatus): String = stringResource(
 )
 
 @Composable
-private fun MessageInput(enabled: Boolean, onSend: (String) -> Unit) {
+private fun MessageInput(enabled: Boolean, onSend: (String) -> Unit, onAttach: () -> Unit) {
     var text by remember { mutableStateOf("") }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
+        // Gated on the same `enabled` (connectionState == READY) as the send button:
+        // docs/08 §10 requires a live connection for the offer/response exchange, the
+        // same reason a plain text send is disabled before READY.
+        TextButton(onClick = onAttach, enabled = enabled) {
+            Text(stringResource(R.string.chat_attach_button))
+        }
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },

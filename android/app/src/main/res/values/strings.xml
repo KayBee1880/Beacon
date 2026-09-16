@@ -39,4 +39,11 @@
 
     <string name="conversations_title">Conversations</string>
     <string name="conversations_empty">No conversations yet.</string>
+
+    <string name="chat_attach_button">Attach</string>
+    <string name="attachment_state_local">Sent</string>
+    <string name="attachment_state_offered">Waiting</string>
+    <string name="attachment_state_transferring">Receiving…</string>
+    <string name="attachment_state_received">Received</string>
+    <string name="attachment_state_failed">Failed</string>
 </resources>

@@ -61,6 +61,82 @@ class MessageRepository(
 
     suspend fun getExistingIds(ids: List<String>): List<String> = messageDao.getExistingIds(ids)
 
+    // Milestone 7 (D-037): content is blank, there's no caption feature this milestone,
+    // the file itself is the message. attachmentState starts LOCAL, a sender's own copy
+    // already exists in full, unlike the receiver's, which starts OFFERED (below).
+    // messageId is caller-supplied, not generated here, unlike createOutgoing: ChatScreen
+    // has to name the copied-in local file *before* this row exists, and needs that same
+    // id to be the one that ends up on the wire in the offer, so it generates the id first.
+    suspend fun createOutgoingAttachment(
+        messageId: String,
+        conversationId: String,
+        fileName: String,
+        mimeType: String,
+        sizeBytes: Long,
+        contentHash: ByteArray,
+        localPath: String
+    ): Message {
+        val message = Message(
+            id = messageId,
+            conversationId = conversationId,
+            direction = MessageDirection.OUTGOING,
+            content = "",
+            status = MessageStatus.SENDING,
+            createdAt = System.currentTimeMillis(),
+            attachmentFileName = fileName,
+            attachmentMimeType = mimeType,
+            attachmentSizeBytes = sizeBytes,
+            attachmentContentHash = contentHash,
+            attachmentLocalPath = localPath,
+            attachmentState = AttachmentState.LOCAL
+        )
+        messageDao.insert(message)
+        conversationDao.touch(conversationId, message.createdAt)
+        return message
+    }
+
+    // status = DELIVERED immediately, the same convention receiveIncoming already
+    // established for text: the message construct (here, its metadata) has arrived the
+    // moment this runs. localPath already points to where ChatGattServer.handleAttachmentOffer
+    // will write the file, even though it doesn't exist there yet, attachmentState = OFFERED
+    // is what actually reflects that the bytes haven't arrived.
+    suspend fun receiveIncomingAttachmentOffer(
+        conversationId: String,
+        messageId: String,
+        fileName: String,
+        mimeType: String,
+        sizeBytes: Long,
+        contentHash: ByteArray,
+        localPath: String
+    ): Message {
+        val now = System.currentTimeMillis()
+        val message = Message(
+            id = messageId,
+            conversationId = conversationId,
+            direction = MessageDirection.INCOMING,
+            content = "",
+            status = MessageStatus.DELIVERED,
+            createdAt = now,
+            deliveredAt = now,
+            attachmentFileName = fileName,
+            attachmentMimeType = mimeType,
+            attachmentSizeBytes = sizeBytes,
+            attachmentContentHash = contentHash,
+            attachmentLocalPath = localPath,
+            attachmentState = AttachmentState.OFFERED
+        )
+        if (messageDao.insertIgnoreDuplicate(message) != -1L) {
+            conversationDao.touch(conversationId, now)
+        }
+        return message
+    }
+
+    suspend fun markAttachmentState(message: Message, state: AttachmentState): Message {
+        val updated = message.copy(attachmentState = state)
+        messageDao.update(updated)
+        return updated
+    }
+
     suspend fun markSent(message: Message): Message {
         val updated = message.copy(status = MessageStatus.SENT)
         messageDao.update(updated)
