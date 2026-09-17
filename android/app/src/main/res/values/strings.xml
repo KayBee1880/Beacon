@@ -36,6 +36,7 @@
 
     <string name="nav_nearby">Nearby</string>
     <string name="nav_conversations">Conversations</string>
+    <string name="nav_mesh">Mesh</string>
 
     <string name="conversations_title">Conversations</string>
     <string name="conversations_empty">No conversations yet.</string>
@@ -46,4 +47,10 @@
     <string name="attachment_state_transferring">Receiving…</string>
     <string name="attachment_state_received">Received</string>
     <string name="attachment_state_failed">Failed</string>
+
+    <string name="mesh_title">Mesh</string>
+    <string name="mesh_empty">No peers known yet.</string>
+    <string name="mesh_you_label">You</string>
+    <string name="mesh_section_recently_direct">Recently nearby</string>
+    <string name="mesh_section_mesh_only">Known via mesh</string>
 </resources>

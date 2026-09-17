@@ -144,6 +144,11 @@ private fun BeaconApp(
                     peerRepository = peerRepository,
                     onConversationSelected = { selectedPeer = it }
                 )
+                TopLevelTab.MESH -> MeshScreen(
+                    peerRepository = peerRepository,
+                    peerDiscovery = peerDiscovery,
+                    onPeerSelected = { selectedPeer = it }
+                )
             }
         }
         NavigationBar {
@@ -159,12 +164,18 @@ private fun BeaconApp(
                 icon = {},
                 label = { Text(stringResource(R.string.nav_conversations)) }
             )
+            NavigationBarItem(
+                selected = topLevelTab == TopLevelTab.MESH,
+                onClick = { topLevelTab = TopLevelTab.MESH },
+                icon = {},
+                label = { Text(stringResource(R.string.nav_mesh)) }
+            )
         }
     }
 }
 
-// D-027: text labels only, no Icon glyphs; see docs/06 §3.
-private enum class TopLevelTab { NEARBY, CONVERSATIONS }
+// D-027/D-048: text labels only, no Icon glyphs; see docs/06 §3, docs/10 §3.
+private enum class TopLevelTab { NEARBY, CONVERSATIONS, MESH }
 
 @Composable
 private fun IdentitySetupScreen(identityRepository: IdentityRepository) {
@@ -210,17 +221,9 @@ private fun IdentitySetupScreen(identityRepository: IdentityRepository) {
     }
 }
 
-private enum class SignalStrength { STRONG, MEDIUM, WEAK }
-
+// SignalStrength/bucketRssi/NEARBY_GRACE_PERIOD_MS moved to PeerReachability.kt in
+// Milestone 9 (D-049), once MeshScreen needed the exact same definitions.
 private data class NearbyPeerUiState(val peer: Peer, val signal: SignalStrength)
-
-private const val NEARBY_GRACE_PERIOD_MS = 30_000L
-
-private fun bucketRssi(rssi: Int): SignalStrength = when {
-    rssi >= -60 -> SignalStrength.STRONG
-    rssi >= -80 -> SignalStrength.MEDIUM
-    else -> SignalStrength.WEAK
-}
 
 @Composable
 private fun PeerDiscoveryScreen(

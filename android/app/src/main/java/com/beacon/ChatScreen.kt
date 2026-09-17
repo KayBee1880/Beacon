@@ -131,6 +131,13 @@ fun ChatScreen(
         conversationId?.let { messageRepository.observeForConversation(it) } ?: emptyFlow<List<Message>>()
     }.collectAsState(initial = emptyList())
 
+    // D-051: blank whenever this peer has no live RSSI, either they've never been
+    // resolved directly (a conversation opened from ConversationsScreen with a mesh-only
+    // peer) or they were resolved once to open this chat but have since gone out of range;
+    // reuses the exact same bucketing MeshScreen and PeerDiscoveryScreen already share.
+    val rssiByPeerId by peerDiscovery.rssiByPeerId.collectAsState()
+    val signal = rssiByPeerId[peer.id]?.let { bucketRssi(it) }
+
     // docs/08 §10: attachment permissions are requested here, on demand, the first time
     // the attach button is actually tapped, not folded into BeaconApp's app-wide gate,
     // most users may never send a file at all.
@@ -156,6 +163,9 @@ fun ChatScreen(
             Column {
                 Text(peer.displayName, style = MaterialTheme.typography.titleMedium)
                 Text(connectionStatusText(connectionState), style = MaterialTheme.typography.bodySmall)
+                if (signal != null) {
+                    Text(signalStrengthText(signal), style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -245,6 +255,17 @@ private fun queryDisplayName(context: Context, uri: Uri): String? =
         val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
         if (nameColumn >= 0 && cursor.moveToFirst()) cursor.getString(nameColumn) else null
     }
+
+// Same three string resources PeerDiscoveryScreen's PeerRow already uses for the exact
+// same buckets (D-051): a live signal reading means the same thing wherever it's shown.
+@Composable
+private fun signalStrengthText(signal: SignalStrength): String = stringResource(
+    when (signal) {
+        SignalStrength.STRONG -> R.string.signal_strong
+        SignalStrength.MEDIUM -> R.string.signal_medium
+        SignalStrength.WEAK -> R.string.signal_weak
+    }
+)
 
 @Composable
 private fun connectionStatusText(state: ChatConnectionState): String = stringResource(
