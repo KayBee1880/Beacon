@@ -1,6 +1,7 @@
 package com.beacon.ble
 
 import com.beacon.data.RelayEnvelope
+import com.beacon.data.RelayEnvelopeKind
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -76,7 +77,7 @@ class ChatFrameTest {
     }
 
     @Test
-    fun `relay envelope round trips through encode and decode, except receivedAt`() {
+    fun `MESSAGE-kind relay envelope round trips through encode and decode, except receivedAt`() {
         val envelope = RelayEnvelope(
             messageId = messageId(),
             originSenderId = "origin-public-key",
@@ -84,7 +85,11 @@ class ChatFrameTest {
             finalRecipientId = "recipient-public-key",
             senderEphemeralPublicKey = byteArrayOf(1, 2, 3),
             senderEphemeralPublicKeySignature = byteArrayOf(4, 5, 6),
+            originEncryptionPublicKey = "origin-encryption-key",
+            originEncryptionPublicKeySignature = "origin-encryption-key-signature",
             ciphertext = byteArrayOf(7, 8, 9, 10),
+            kind = RelayEnvelopeKind.MESSAGE,
+            ackedMessageId = null,
             hopCount = 2,
             createdAt = 1_700_000_000_000L,
             receivedAt = 1_700_000_000_000L
@@ -99,11 +104,45 @@ class ChatFrameTest {
         assertEquals(envelope.finalRecipientId, decoded.finalRecipientId)
         assertArrayEquals(envelope.senderEphemeralPublicKey, decoded.senderEphemeralPublicKey)
         assertArrayEquals(envelope.senderEphemeralPublicKeySignature, decoded.senderEphemeralPublicKeySignature)
+        assertEquals(envelope.originEncryptionPublicKey, decoded.originEncryptionPublicKey)
+        assertEquals(envelope.originEncryptionPublicKeySignature, decoded.originEncryptionPublicKeySignature)
         assertArrayEquals(envelope.ciphertext, decoded.ciphertext)
+        assertEquals(envelope.kind, decoded.kind)
+        assertNull(decoded.ackedMessageId)
         assertEquals(envelope.hopCount, decoded.hopCount)
         assertEquals(envelope.createdAt, decoded.createdAt)
         // receivedAt is deliberately not part of the wire format (docs/07 §8's own note),
         // decodeEnvelope always fills it in fresh as "now", never the sender's own value.
+    }
+
+    // Milestone 12 (D-060): the one genuinely new wire-format path this milestone adds,
+    // the nullable ackedMessageId flag byte; the MESSAGE-kind test above already covers
+    // the "absent" branch (ackedMessageId = null), this covers "present".
+    @Test
+    fun `ACK-kind relay envelope round trips its ackedMessageId`() {
+        val ackedMessageId = messageId()
+        val envelope = RelayEnvelope(
+            messageId = messageId(),
+            originSenderId = "acker-public-key",
+            originDisplayName = "Bob",
+            finalRecipientId = "origin-public-key",
+            senderEphemeralPublicKey = byteArrayOf(1, 2, 3),
+            senderEphemeralPublicKeySignature = byteArrayOf(4, 5, 6),
+            originEncryptionPublicKey = "acker-encryption-key",
+            originEncryptionPublicKeySignature = "acker-encryption-key-signature",
+            ciphertext = byteArrayOf(7, 8, 9, 10),
+            kind = RelayEnvelopeKind.ACK,
+            ackedMessageId = ackedMessageId,
+            hopCount = 0,
+            createdAt = 1_700_000_000_000L,
+            receivedAt = 1_700_000_000_000L
+        )
+
+        val decoded = RelayFramePlaintext.decodeEnvelope(RelayFramePlaintext.encodeEnvelope(envelope))
+
+        requireNotNull(decoded)
+        assertEquals(RelayEnvelopeKind.ACK, decoded.kind)
+        assertEquals(ackedMessageId, decoded.ackedMessageId)
     }
 
     @Test

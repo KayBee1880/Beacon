@@ -8,9 +8,11 @@ import com.beacon.data.Identity
 import com.beacon.data.MessageRepository
 import com.beacon.data.PeerRepository
 import com.beacon.data.RelayEnvelope
+import com.beacon.data.RelayEnvelopeKind
 import com.beacon.data.RelayEnvelopeRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.crypto.SecretKey
 
 /**
@@ -116,10 +118,77 @@ class RelayGossipSession(
             return
         }
 
+        // Milestone 12 (D-060): kind is the only place a MESSAGE and an ACK envelope are
+        // actually treated differently, everything above this point (signature
+        // verification, envelope key derivation, decryption) is identical either way.
+        when (envelope.kind) {
+            RelayEnvelopeKind.MESSAGE -> deliverMessage(envelope, plaintext)
+            RelayEnvelopeKind.ACK -> deliverAck(plaintext)
+        }
+    }
+
+    private suspend fun deliverMessage(envelope: RelayEnvelope, plaintext: ByteArray) {
         peerRepository.recordKnownFromRelay(envelope.originSenderId, envelope.originDisplayName)
         val (messageId, content) = ChatMessagePlaintext.decodeMessage(plaintext)
         val conversation = conversationRepository.getOrCreate(envelope.originSenderId)
-        messageRepository.receiveIncoming(conversation.id, messageId, content)
+        // Milestone 12 (D-061): null means this was a duplicate delivery (an earlier
+        // arrival already acked it), only a genuinely new delivery gets a fresh ack.
+        val delivered = messageRepository.receiveIncoming(conversation.id, messageId, content) ?: return
+        val ackEnvelope = buildAckEnvelope(envelope, delivered.id) ?: return
+        relayEnvelopeRepository.store(ackEnvelope)
+    }
+
+    private suspend fun deliverAck(plaintext: ByteArray) {
+        val ackedMessageId = ChatMessagePlaintext.decodeAck(plaintext)
+        messageRepository.getById(ackedMessageId)?.let { messageRepository.markDelivered(it) }
+    }
+
+    // Milestone 12 (D-059/D-060): the return trip uses the exact same ECDH/HKDF/AES-GCM
+    // pipeline as the original message, just addressed the other way, encrypted to the
+    // origin's own authenticated encryption key (carried in the envelope being acked, for
+    // exactly this purpose) rather than one learned through discovery. Null means the
+    // origin's embedded key didn't verify, an ack simply isn't sent, the message itself
+    // was already delivered successfully regardless of whether this ack can go out.
+    private fun buildAckEnvelope(originalEnvelope: RelayEnvelope, messageId: String): RelayEnvelope? {
+        val originEncryptionPublicKey = try {
+            cryptoService.decodeAndVerifyEncryptionPublicKey(
+                originalEnvelope.originSenderId,
+                originalEnvelope.originEncryptionPublicKey,
+                originalEnvelope.originEncryptionPublicKeySignature
+            )
+        } catch (e: Exception) {
+            BeaconLog.w(TAG, "Malformed origin encryption key, cannot ack", e)
+            null
+        }
+        if (originEncryptionPublicKey == null) {
+            BeaconLog.w(TAG, "Origin encryption key signature verification failed, dropping ack")
+            return null
+        }
+
+        val ephemeralKeyPair = cryptoService.generateEphemeralKeyPair()
+        val envelopeKey = cryptoService.deriveEnvelopeKey(ephemeralKeyPair.private, originEncryptionPublicKey)
+        val ciphertext = cryptoService.encrypt(envelopeKey, ChatMessagePlaintext.encodeAck(messageId))
+        val signature = cryptoService.signEphemeralPublicKey(identity.keystoreAlias, ephemeralKeyPair.public)
+
+        return RelayEnvelope(
+            // A fresh id, not messageId: this ack's own row can be in flight, in the
+            // opposite direction, at the same time as the envelope it's acknowledging
+            // (D-060), the two must never share a gossip/storage identity.
+            messageId = UUID.randomUUID().toString(),
+            originSenderId = identity.publicKey,
+            originDisplayName = identity.displayName,
+            finalRecipientId = originalEnvelope.originSenderId,
+            senderEphemeralPublicKey = ephemeralKeyPair.public.encoded,
+            senderEphemeralPublicKeySignature = signature,
+            originEncryptionPublicKey = identity.encryptionPublicKey,
+            originEncryptionPublicKeySignature = identity.encryptionPublicKeySignature,
+            ciphertext = ciphertext,
+            kind = RelayEnvelopeKind.ACK,
+            ackedMessageId = messageId,
+            hopCount = 0,
+            createdAt = System.currentTimeMillis(),
+            receivedAt = System.currentTimeMillis()
+        )
     }
 
     private fun sendEncrypted(plaintext: ByteArray, wrap: (ByteArray) -> ChatFrame) {

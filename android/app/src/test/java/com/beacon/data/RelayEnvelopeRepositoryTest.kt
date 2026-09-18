@@ -20,7 +20,11 @@ private fun envelope(hopCount: Int = 0, createdAt: Long = System.currentTimeMill
         finalRecipientId = "recipient",
         senderEphemeralPublicKey = byteArrayOf(1, 2, 3),
         senderEphemeralPublicKeySignature = byteArrayOf(4, 5, 6),
+        originEncryptionPublicKey = "origin-encryption-key",
+        originEncryptionPublicKeySignature = "origin-encryption-key-signature",
         ciphertext = byteArrayOf(7, 8, 9),
+        kind = RelayEnvelopeKind.MESSAGE,
+        ackedMessageId = null,
         hopCount = hopCount,
         createdAt = createdAt,
         receivedAt = receivedAt

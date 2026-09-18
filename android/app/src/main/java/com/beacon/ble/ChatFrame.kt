@@ -1,6 +1,7 @@
 package com.beacon.ble
 
 import com.beacon.data.RelayEnvelope
+import com.beacon.data.RelayEnvelopeKind
 import java.nio.ByteBuffer
 
 private const val FRAME_TYPE_HANDSHAKE: Byte = 0x01
@@ -119,6 +120,9 @@ object RelayFramePlaintext {
         val originSenderIdBytes = envelope.originSenderId.toByteArray(Charsets.UTF_8)
         val originDisplayNameBytes = envelope.originDisplayName.toByteArray(Charsets.UTF_8)
         val finalRecipientIdBytes = envelope.finalRecipientId.toByteArray(Charsets.UTF_8)
+        val originEncryptionPublicKeyBytes = envelope.originEncryptionPublicKey.toByteArray(Charsets.UTF_8)
+        val originEncryptionPublicKeySignatureBytes = envelope.originEncryptionPublicKeySignature.toByteArray(Charsets.UTF_8)
+        val ackedMessageIdBytes = envelope.ackedMessageId?.toByteArray(Charsets.US_ASCII)
         val buffer = ByteBuffer.allocate(
             MESSAGE_ID_LENGTH_BYTES +
                 4 + originSenderIdBytes.size +
@@ -126,7 +130,11 @@ object RelayFramePlaintext {
                 4 + finalRecipientIdBytes.size +
                 4 + envelope.senderEphemeralPublicKey.size +
                 4 + envelope.senderEphemeralPublicKeySignature.size +
+                4 + originEncryptionPublicKeyBytes.size +
+                4 + originEncryptionPublicKeySignatureBytes.size +
                 4 + envelope.ciphertext.size +
+                1 +
+                1 + (ackedMessageIdBytes?.size ?: 0) +
                 4 + 8
         )
         buffer.put(envelope.messageId.toByteArray(Charsets.US_ASCII))
@@ -135,7 +143,16 @@ object RelayFramePlaintext {
         buffer.putInt(finalRecipientIdBytes.size).put(finalRecipientIdBytes)
         buffer.putInt(envelope.senderEphemeralPublicKey.size).put(envelope.senderEphemeralPublicKey)
         buffer.putInt(envelope.senderEphemeralPublicKeySignature.size).put(envelope.senderEphemeralPublicKeySignature)
+        buffer.putInt(originEncryptionPublicKeyBytes.size).put(originEncryptionPublicKeyBytes)
+        buffer.putInt(originEncryptionPublicKeySignatureBytes.size).put(originEncryptionPublicKeySignatureBytes)
         buffer.putInt(envelope.ciphertext.size).put(envelope.ciphertext)
+        buffer.put(if (envelope.kind == RelayEnvelopeKind.ACK) 1.toByte() else 0.toByte())
+        if (ackedMessageIdBytes == null) {
+            buffer.put(0.toByte())
+        } else {
+            buffer.put(1.toByte())
+            buffer.put(ackedMessageIdBytes)
+        }
         buffer.putInt(envelope.hopCount)
         buffer.putLong(envelope.createdAt)
         return buffer.array()
@@ -160,7 +177,18 @@ object RelayFramePlaintext {
         val finalRecipientId = readLengthPrefixed() ?: return null
         val senderEphemeralPublicKey = readLengthPrefixed() ?: return null
         val senderEphemeralPublicKeySignature = readLengthPrefixed() ?: return null
+        val originEncryptionPublicKey = readLengthPrefixed() ?: return null
+        val originEncryptionPublicKeySignature = readLengthPrefixed() ?: return null
         val ciphertext = readLengthPrefixed() ?: return null
+        if (buffer.remaining() < 2) return null
+        val kind = if (buffer.get() == 1.toByte()) RelayEnvelopeKind.ACK else RelayEnvelopeKind.MESSAGE
+        val hasAckedMessageId = buffer.get() != 0.toByte()
+        val ackedMessageId = if (hasAckedMessageId) {
+            if (buffer.remaining() < MESSAGE_ID_LENGTH_BYTES) return null
+            String(ByteArray(MESSAGE_ID_LENGTH_BYTES).also { buffer.get(it) }, Charsets.US_ASCII)
+        } else {
+            null
+        }
         if (buffer.remaining() < 12) return null
         val hopCount = buffer.int
         val createdAt = buffer.long
@@ -172,7 +200,11 @@ object RelayFramePlaintext {
             finalRecipientId = String(finalRecipientId, Charsets.UTF_8),
             senderEphemeralPublicKey = senderEphemeralPublicKey,
             senderEphemeralPublicKeySignature = senderEphemeralPublicKeySignature,
+            originEncryptionPublicKey = String(originEncryptionPublicKey, Charsets.UTF_8),
+            originEncryptionPublicKeySignature = String(originEncryptionPublicKeySignature, Charsets.UTF_8),
             ciphertext = ciphertext,
+            kind = kind,
+            ackedMessageId = ackedMessageId,
             hopCount = hopCount,
             createdAt = createdAt,
             receivedAt = System.currentTimeMillis()

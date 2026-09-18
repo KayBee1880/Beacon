@@ -23,4 +23,10 @@ class Converters {
 
     @TypeConverter
     fun toAttachmentState(value: String?): AttachmentState? = value?.let { AttachmentState.valueOf(it) }
+
+    @TypeConverter
+    fun fromRelayEnvelopeKind(value: RelayEnvelopeKind): String = value.name
+
+    @TypeConverter
+    fun toRelayEnvelopeKind(value: String): RelayEnvelopeKind = RelayEnvelopeKind.valueOf(value)
 }

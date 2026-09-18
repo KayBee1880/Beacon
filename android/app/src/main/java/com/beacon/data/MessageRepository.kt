@@ -39,7 +39,14 @@ class MessageRepository(
     // messageId here is the sender's original client-generated id, decrypted off the
     // wire, never a fresh one, so both devices' databases agree on which message this
     // is, which is what makes the ack path (and future retry dedup) actually work.
-    suspend fun receiveIncoming(conversationId: String, messageId: String, content: String): Message {
+    //
+    // Milestone 12 (D-061): returns null when messageId already existed, a duplicate
+    // delivery (direct plus relay, or two relay paths for the same message), rather than
+    // the Message unconditionally. RelayGossipSession.deliverToSelf uses this to only ack
+    // a genuinely new delivery, not one already acked by an earlier arrival. The three
+    // pre-existing callers never used the return value, so this is behavior-preserving
+    // for them.
+    suspend fun receiveIncoming(conversationId: String, messageId: String, content: String): Message? {
         val now = System.currentTimeMillis()
         val message = Message(
             id = messageId,
@@ -50,12 +57,11 @@ class MessageRepository(
             createdAt = now,
             deliveredAt = now
         )
-        // A duplicate delivery (direct plus relay, or two relay paths for the same
-        // message) must not re-touch the conversation's lastMessageAt to "now": that
-        // would bump a conversation to the top of the list for a message it already had.
-        if (messageDao.insertIgnoreDuplicate(message) != -1L) {
-            conversationDao.touch(conversationId, now)
-        }
+        // A duplicate delivery must not re-touch the conversation's lastMessageAt to
+        // "now": that would bump a conversation to the top of the list for a message it
+        // already had.
+        if (messageDao.insertIgnoreDuplicate(message) == -1L) return null
+        conversationDao.touch(conversationId, now)
         return message
     }
 
@@ -213,7 +219,13 @@ class MessageRepository(
             finalRecipientId = finalRecipientId,
             senderEphemeralPublicKey = ephemeralKeyPair.public.encoded,
             senderEphemeralPublicKeySignature = signature,
+            // Milestone 12 (D-059): carried so the eventual recipient, who may never have
+            // discovered this device directly, can still build a return-path ack.
+            originEncryptionPublicKey = identity.encryptionPublicKey,
+            originEncryptionPublicKeySignature = identity.encryptionPublicKeySignature,
             ciphertext = ciphertext,
+            kind = RelayEnvelopeKind.MESSAGE,
+            ackedMessageId = null,
             hopCount = 0,
             createdAt = message.createdAt,
             receivedAt = System.currentTimeMillis()

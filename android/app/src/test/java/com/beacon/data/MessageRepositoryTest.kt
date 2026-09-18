@@ -97,4 +97,37 @@ class MessageRepositoryTest {
 
         assertEquals(MessageStatus.FAILED, message.status)
     }
+
+    // Milestone 12 (D-061): receiveIncoming's null-on-duplicate return is what lets
+    // RelayGossipSession.deliverMessage decide whether to build an ack at all, these two
+    // tests are the real decision boundary that logic depends on, no crypto involved.
+    @Test
+    fun `receiveIncoming returns the new Message and touches the conversation`() = runTest {
+        val (repository, _, conversationDao) = newRepository()
+        val conversationId = UUID.randomUUID().toString()
+        conversationDao.stored.add(Conversation(conversationId, peerId = "peer", createdAt = 0L, lastMessageAt = 0L))
+        val messageId = UUID.randomUUID().toString()
+
+        val delivered = repository.receiveIncoming(conversationId, messageId, "hello")
+
+        assertEquals(messageId, delivered?.id)
+        assertEquals(MessageStatus.DELIVERED, delivered?.status)
+        val conversation = requireNotNull(conversationDao.get(conversationId))
+        assertTrue(conversation.lastMessageAt > 0L)
+    }
+
+    @Test
+    fun `receiveIncoming returns null for a duplicate delivery and does not re-touch the conversation`() = runTest {
+        val (repository, _, conversationDao) = newRepository()
+        val conversationId = UUID.randomUUID().toString()
+        conversationDao.stored.add(Conversation(conversationId, peerId = "peer", createdAt = 0L, lastMessageAt = 0L))
+        val messageId = UUID.randomUUID().toString()
+        repository.receiveIncoming(conversationId, messageId, "hello")
+        val touchedAtFirstDelivery = requireNotNull(conversationDao.get(conversationId)).lastMessageAt
+
+        val duplicate = repository.receiveIncoming(conversationId, messageId, "hello")
+
+        assertEquals(null, duplicate)
+        assertEquals(touchedAtFirstDelivery, requireNotNull(conversationDao.get(conversationId)).lastMessageAt)
+    }
 }

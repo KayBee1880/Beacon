@@ -117,6 +117,25 @@ class CryptoService {
         return KeyFactory.getInstance(EC_ALGORITHM).generatePublic(X509EncodedKeySpec(bytes))
     }
 
+    // Milestone 12 (D-059): unlike decodeEncryptionPublicKey above, this key was never
+    // learned through discovery, it arrived embedded in an untrusted relay envelope
+    // (RelayEnvelope.originEncryptionPublicKey), so it needs the same never-trust-on-sight
+    // verification decodeAndVerifyEphemeralPublicKey already gives ephemeral keys. Null
+    // return means the signature didn't verify; the caller must not build a return-path
+    // envelope with this key, never fall back to trusting it.
+    fun decodeAndVerifyEncryptionPublicKey(
+        originIdentityPublicKeyBase64: String,
+        encryptionPublicKeyBase64: String,
+        signatureBase64: String
+    ): PublicKey? {
+        val encryptionPublicKeyBytes = Base64.decode(encryptionPublicKeyBase64, Base64.NO_WRAP)
+        val signatureBytes = Base64.decode(signatureBase64, Base64.NO_WRAP)
+        if (!IdentityKeyStore.verify(originIdentityPublicKeyBase64, encryptionPublicKeyBytes, signatureBytes)) {
+            return null
+        }
+        return KeyFactory.getInstance(EC_ALGORITHM).generatePublic(X509EncodedKeySpec(encryptionPublicKeyBytes))
+    }
+
     // D-031: the envelope key is ECDH + HKDF exactly like deriveSessionKey above, ECDH
     // between a fresh sender ephemeral key and the recipient's long-term encryption
     // public key rather than two live ephemeral keys, with ENVELOPE_KEY_INFO instead of
