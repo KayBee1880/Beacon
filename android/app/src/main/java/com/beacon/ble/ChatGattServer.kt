@@ -2,7 +2,7 @@ package com.beacon.ble
 
 import android.bluetooth.BluetoothDevice
 import android.content.Context
-import android.util.Log
+import com.beacon.diagnostics.BeaconLog
 import com.beacon.crypto.ChatMessagePlaintext
 import com.beacon.crypto.CryptoService
 import com.beacon.data.AttachmentState
@@ -61,8 +61,8 @@ class ChatGattServer(
             // This side only ever sends offers of its own from a ChatConnection, never
             // from here (docs/08's asymmetry note); a response arriving at the peripheral
             // side would mean the peer's central-role code has a bug.
-            is ChatFrame.EncryptedAttachmentResponse -> Log.w(TAG, "Unexpected attachment response on an incoming connection")
-            null -> Log.w(TAG, "Unrecognized or malformed frame from ${device.address}")
+            is ChatFrame.EncryptedAttachmentResponse -> BeaconLog.w(TAG, "Unexpected attachment response on an incoming connection")
+            null -> BeaconLog.w(TAG, "Unrecognized or malformed frame from ${device.address}")
         }
     }
 
@@ -75,18 +75,18 @@ class ChatGattServer(
     private fun handleHandshake(device: BluetoothDevice, frame: ChatFrame.Handshake) {
         val peerPublicKey = resolvedIdentityByDeviceAddress()[device.address]
         if (peerPublicKey == null) {
-            Log.w(TAG, "Handshake from ${device.address}, but no resolved identity yet, failing per docs/04 §6")
+            BeaconLog.w(TAG, "Handshake from ${device.address}, but no resolved identity yet, failing per docs/04 §6")
             return
         }
 
         val peerEphemeralPublicKey = try {
             cryptoService.decodeAndVerifyEphemeralPublicKey(peerPublicKey, frame.ephemeralPublicKey, frame.signature)
         } catch (e: Exception) {
-            Log.w(TAG, "Malformed handshake key from ${device.address}", e)
+            BeaconLog.w(TAG, "Malformed handshake key from ${device.address}", e)
             null
         }
         if (peerEphemeralPublicKey == null) {
-            Log.w(TAG, "Handshake signature verification failed for ${device.address}")
+            BeaconLog.w(TAG, "Handshake signature verification failed for ${device.address}")
             return
         }
 
@@ -114,7 +114,7 @@ class ChatGattServer(
 
     private fun handleMessage(device: BluetoothDevice, frame: ChatFrame.EncryptedMessage) {
         val session = sessionsByDeviceAddress[device.address] ?: run {
-            Log.w(TAG, "Message from ${device.address} with no completed handshake, dropping")
+            BeaconLog.w(TAG, "Message from ${device.address} with no completed handshake, dropping")
             return
         }
         val plaintext = decryptOrNull(session.sessionKey, frame.payload) ?: return
@@ -134,12 +134,12 @@ class ChatGattServer(
     // decline is this device having no usable Wi-Fi Direct address at all (docs/08 §3).
     private fun handleAttachmentOffer(device: BluetoothDevice, frame: ChatFrame.EncryptedAttachmentOffer) {
         val session = sessionsByDeviceAddress[device.address] ?: run {
-            Log.w(TAG, "Attachment offer from ${device.address} with no completed handshake, dropping")
+            BeaconLog.w(TAG, "Attachment offer from ${device.address} with no completed handshake, dropping")
             return
         }
         val plaintext = decryptOrNull(session.sessionKey, frame.payload) ?: return
         val offer = AttachmentFramePlaintext.decodeOffer(plaintext) ?: run {
-            Log.w(TAG, "Malformed attachment offer from ${device.address}")
+            BeaconLog.w(TAG, "Malformed attachment offer from ${device.address}")
             return
         }
 
@@ -182,7 +182,7 @@ class ChatGattServer(
 
     private fun handleAck(device: BluetoothDevice, frame: ChatFrame.EncryptedAck) {
         val session = sessionsByDeviceAddress[device.address] ?: run {
-            Log.w(TAG, "Ack from ${device.address} with no completed handshake, dropping")
+            BeaconLog.w(TAG, "Ack from ${device.address} with no completed handshake, dropping")
             return
         }
         val plaintext = decryptOrNull(session.sessionKey, frame.payload) ?: return
@@ -199,7 +199,7 @@ class ChatGattServer(
         try {
             cryptoService.decrypt(sessionKey, payload)
         } catch (e: Exception) {
-            Log.w(TAG, "Decryption failed", e)
+            BeaconLog.w(TAG, "Decryption failed", e)
             null
         }
 

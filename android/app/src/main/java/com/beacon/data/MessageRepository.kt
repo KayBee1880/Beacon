@@ -61,6 +61,8 @@ class MessageRepository(
 
     suspend fun getExistingIds(ids: List<String>): List<String> = messageDao.getExistingIds(ids)
 
+    suspend fun getStatusCounts(): List<MessageStatusCount> = messageDao.getStatusCounts()
+
     // Milestone 7 (D-037): content is blank, there's no caption feature this milestone,
     // the file itself is the message. attachmentState starts LOCAL, a sender's own copy
     // already exists in full, unlike the receiver's, which starts OFFERED (below).

@@ -15,7 +15,7 @@ import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
-import android.util.Log
+import com.beacon.diagnostics.BeaconLog
 import com.beacon.data.ConversationRepository
 import com.beacon.data.Identity
 import com.beacon.data.MessageRepository
@@ -55,7 +55,7 @@ class BlePeripheralRole(
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartFailure(errorCode: Int) {
-            Log.w(TAG, "Advertising failed to start, error code $errorCode")
+            BeaconLog.w(TAG, "Advertising failed to start, error code $errorCode")
         }
     }
 
@@ -192,7 +192,7 @@ class BlePeripheralRole(
     private fun sendToDevice(device: BluetoothDevice, bytes: ByteArray) {
         val characteristic = txCharacteristic ?: return
         if (device.address !in subscribedDeviceAddresses) {
-            Log.w(TAG, "Not sending to ${device.address}: not subscribed to TX notifications")
+            BeaconLog.w(TAG, "Not sending to ${device.address}: not subscribed to TX notifications")
             return
         }
         characteristic.setValue(bytes)

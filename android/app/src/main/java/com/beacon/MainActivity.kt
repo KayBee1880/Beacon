@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -24,6 +25,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -114,6 +116,7 @@ private fun BeaconApp(
 
     var selectedPeer by remember { mutableStateOf<Peer?>(null) }
     var topLevelTab by remember { mutableStateOf(TopLevelTab.NEARBY) }
+    var showDiagnostics by remember { mutableStateOf(false) }
     val peer = selectedPeer
     if (peer != null) {
         ChatScreen(
@@ -130,6 +133,18 @@ private fun BeaconApp(
         return
     }
 
+    if (showDiagnostics) {
+        DiagnosticsScreen(
+            identity = currentIdentity,
+            peerRepository = peerRepository,
+            conversationRepository = conversationRepository,
+            messageRepository = messageRepository,
+            relayEnvelopeRepository = relayEnvelopeRepository,
+            onBack = { showDiagnostics = false }
+        )
+        return
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f)) {
             when (topLevelTab) {
@@ -137,7 +152,8 @@ private fun BeaconApp(
                     identity = currentIdentity,
                     peerRepository = peerRepository,
                     peerDiscovery = peerDiscovery,
-                    onPeerSelected = { selectedPeer = it }
+                    onPeerSelected = { selectedPeer = it },
+                    onDiagnostics = { showDiagnostics = true }
                 )
                 TopLevelTab.CONVERSATIONS -> ConversationsScreen(
                     conversationRepository = conversationRepository,
@@ -230,7 +246,8 @@ private fun PeerDiscoveryScreen(
     identity: Identity,
     peerRepository: PeerRepository,
     peerDiscovery: PeerDiscovery,
-    onPeerSelected: (Peer) -> Unit
+    onPeerSelected: (Peer) -> Unit,
+    onDiagnostics: () -> Unit
 ) {
     val nearbyPeers by remember(peerRepository, peerDiscovery) {
         combine(peerRepository.observeAll(), peerDiscovery.rssiByPeerId) { peers, rssiByPeerId ->
@@ -242,7 +259,13 @@ private fun PeerDiscoveryScreen(
     }.collectAsState(initial = emptyList())
 
     Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-        Text(stringResource(R.string.nearby_title), style = MaterialTheme.typography.headlineSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.nearby_title), style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.width(8.dp))
+            // D-053: the one entry point into DiagnosticsScreen, a small button here
+            // rather than a fourth top-level tab, see that decision's own reasoning.
+            TextButton(onClick = onDiagnostics) { Text(stringResource(R.string.nearby_diagnostics_button)) }
+        }
         Spacer(Modifier.height(4.dp))
         Text(stringResource(R.string.nearby_signed_in_as, identity.displayName))
         Spacer(Modifier.height(16.dp))

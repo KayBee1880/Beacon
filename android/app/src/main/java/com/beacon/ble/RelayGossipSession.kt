@@ -1,6 +1,6 @@
 package com.beacon.ble
 
-import android.util.Log
+import com.beacon.diagnostics.BeaconLog
 import com.beacon.crypto.ChatMessagePlaintext
 import com.beacon.crypto.CryptoService
 import com.beacon.data.ConversationRepository
@@ -72,7 +72,7 @@ class RelayGossipSession(
     fun handlePush(frame: ChatFrame.EncryptedRelayPush) {
         val plaintext = decryptOrNull(frame.payload) ?: return
         val envelope = RelayFramePlaintext.decodeEnvelope(plaintext) ?: run {
-            Log.w(TAG, "Malformed relay envelope")
+            BeaconLog.w(TAG, "Malformed relay envelope")
             return
         }
         scope.launch {
@@ -99,11 +99,11 @@ class RelayGossipSession(
                 envelope.senderEphemeralPublicKeySignature
             )
         } catch (e: Exception) {
-            Log.w(TAG, "Malformed relay envelope sender key", e)
+            BeaconLog.w(TAG, "Malformed relay envelope sender key", e)
             null
         }
         if (senderEphemeralPublicKey == null) {
-            Log.w(TAG, "Relay envelope signature verification failed, dropping")
+            BeaconLog.w(TAG, "Relay envelope signature verification failed, dropping")
             return
         }
 
@@ -112,7 +112,7 @@ class RelayGossipSession(
         val plaintext = try {
             cryptoService.decrypt(envelopeKey, envelope.ciphertext)
         } catch (e: Exception) {
-            Log.w(TAG, "Relay envelope decryption failed, dropping", e)
+            BeaconLog.w(TAG, "Relay envelope decryption failed, dropping", e)
             return
         }
 
@@ -130,7 +130,7 @@ class RelayGossipSession(
         try {
             cryptoService.decrypt(sessionKey, payload)
         } catch (e: Exception) {
-            Log.w(TAG, "Relay frame decryption failed", e)
+            BeaconLog.w(TAG, "Relay frame decryption failed", e)
             null
         }
 

@@ -53,4 +53,23 @@
     <string name="mesh_you_label">You</string>
     <string name="mesh_section_recently_direct">Recently nearby</string>
     <string name="mesh_section_mesh_only">Known via mesh</string>
+
+    <string name="nearby_diagnostics_button">Diagnostics</string>
+    <string name="diagnostics_title">Diagnostics</string>
+    <string name="diagnostics_section_identity">Identity</string>
+    <string name="diagnostics_fingerprint">Key: %1$s…</string>
+    <string name="diagnostics_section_peers">Peers</string>
+    <string name="diagnostics_peers_total">Known: %1$d</string>
+    <string name="diagnostics_peers_direct">Nearby now: %1$d</string>
+    <string name="diagnostics_peers_recently_direct">Recently nearby: %1$d</string>
+    <string name="diagnostics_peers_mesh_only">Known via mesh: %1$d</string>
+    <string name="diagnostics_section_conversations">Conversations</string>
+    <string name="diagnostics_conversations_total">Total: %1$d</string>
+    <string name="diagnostics_section_messages">Messages</string>
+    <string name="diagnostics_messages_none">No messages yet.</string>
+    <string name="diagnostics_section_relay">Relay</string>
+    <string name="diagnostics_relay_held">Envelopes currently held: %1$d</string>
+    <string name="diagnostics_section_log">Recent log</string>
+    <string name="diagnostics_refresh_button">Refresh</string>
+    <string name="diagnostics_log_empty">Nothing logged yet.</string>
 </resources>

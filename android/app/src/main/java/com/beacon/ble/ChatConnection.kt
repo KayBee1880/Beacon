@@ -8,7 +8,7 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.content.Context
-import android.util.Log
+import com.beacon.diagnostics.BeaconLog
 import com.beacon.crypto.ChatMessagePlaintext
 import com.beacon.crypto.CryptoService
 import com.beacon.data.ConversationRepository
@@ -223,7 +223,7 @@ class ChatConnection(
             // fails cleanly here rather than attempting a handshake write that would
             // silently be truncated.
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                Log.w(TAG, "MTU negotiation failed, status $status")
+                BeaconLog.w(TAG, "MTU negotiation failed, status $status")
                 _state.value = ChatConnectionState.FAILED
                 gatt.disconnect()
                 return
@@ -242,7 +242,7 @@ class ChatConnection(
             val tx = service?.getCharacteristic(BeaconGattProfile.TX_CHARACTERISTIC_UUID)
             val cccd = tx?.getDescriptor(BeaconGattProfile.CLIENT_CHARACTERISTIC_CONFIG_UUID)
             if (rx == null || tx == null || cccd == null) {
-                Log.w(TAG, "Peer is missing the messaging service or its notification descriptor")
+                BeaconLog.w(TAG, "Peer is missing the messaging service or its notification descriptor")
                 _state.value = ChatConnectionState.FAILED
                 gatt.disconnect()
                 return
@@ -263,7 +263,7 @@ class ChatConnection(
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
             if (descriptor.uuid != BeaconGattProfile.CLIENT_CHARACTERISTIC_CONFIG_UUID) return
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                Log.w(TAG, "Failed to subscribe to TX notifications, status $status")
+                BeaconLog.w(TAG, "Failed to subscribe to TX notifications, status $status")
                 _state.value = ChatConnectionState.FAILED
                 gatt.disconnect()
                 return
@@ -308,8 +308,8 @@ class ChatConnection(
                 // This connection only ever sends offers, never receives one (docs/08's
                 // asymmetry note); an offer arriving here would mean the peer's GATT
                 // server code has a bug, not something to act on.
-                is ChatFrame.EncryptedAttachmentOffer -> Log.w(TAG, "Unexpected attachment offer on an outgoing connection")
-                null -> Log.w(TAG, "Unrecognized or malformed frame from peer")
+                is ChatFrame.EncryptedAttachmentOffer -> BeaconLog.w(TAG, "Unexpected attachment offer on an outgoing connection")
+                null -> BeaconLog.w(TAG, "Unrecognized or malformed frame from peer")
             }
         }
     }
@@ -327,11 +327,11 @@ class ChatConnection(
         val peerEphemeralPublicKey = try {
             cryptoService.decodeAndVerifyEphemeralPublicKey(peerPublicKey, frame.ephemeralPublicKey, frame.signature)
         } catch (e: Exception) {
-            Log.w(TAG, "Malformed handshake response", e)
+            BeaconLog.w(TAG, "Malformed handshake response", e)
             null
         }
         if (peerEphemeralPublicKey == null) {
-            Log.w(TAG, "Handshake signature verification failed")
+            BeaconLog.w(TAG, "Handshake signature verification failed")
             _state.value = ChatConnectionState.FAILED
             gatt?.disconnect()
             return
@@ -381,7 +381,7 @@ class ChatConnection(
         try {
             cryptoService.decrypt(key, payload)
         } catch (e: Exception) {
-            Log.w(TAG, "Decryption failed", e)
+            BeaconLog.w(TAG, "Decryption failed", e)
             null
         }
 

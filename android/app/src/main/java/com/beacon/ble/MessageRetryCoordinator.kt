@@ -2,7 +2,7 @@ package com.beacon.ble
 
 import android.bluetooth.BluetoothManager
 import android.content.Context
-import android.util.Log
+import com.beacon.diagnostics.BeaconLog
 import com.beacon.data.ConversationRepository
 import com.beacon.data.IdentityRepository
 import com.beacon.data.MessageRepository
@@ -76,7 +76,7 @@ class MessageRetryCoordinator(
                 // down; sendMessage returning only means the write was queued, not acked.
                 delay(MESSAGE_SETTLE_DELAY_MS)
             } else {
-                Log.w(TAG, "Retry connection to $peerId did not become ready in time")
+                BeaconLog.w(TAG, "Retry connection to $peerId did not become ready in time")
             }
         } finally {
             connection.disconnect()

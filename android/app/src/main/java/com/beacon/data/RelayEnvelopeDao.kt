@@ -17,6 +17,10 @@ interface RelayEnvelopeDao {
     @Query("SELECT messageId FROM relay_envelope")
     suspend fun getAllIds(): List<String>
 
+    // Milestone 10 (D-053): DiagnosticsScreen's "relay envelopes currently held" count.
+    @Query("SELECT COUNT(*) FROM relay_envelope")
+    suspend fun count(): Int
+
     @Query("SELECT * FROM relay_envelope WHERE messageId IN (:ids)")
     suspend fun getByIds(ids: List<String>): List<RelayEnvelope>
 

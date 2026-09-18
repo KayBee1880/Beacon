@@ -7,6 +7,10 @@ import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
+// Milestone 10: DiagnosticsScreen's message-count-by-status section. Room maps this
+// directly from the query's own column names, `count` has to match the SQL alias exactly.
+data class MessageStatusCount(val status: MessageStatus, val count: Int)
+
 @Dao
 interface MessageDao {
 
@@ -36,6 +40,11 @@ interface MessageDao {
     // something already delivered through a different mesh path.
     @Query("SELECT id FROM message WHERE id IN (:ids)")
     suspend fun getExistingIds(ids: List<String>): List<String>
+
+    // Milestone 10 (D-053): one-shot, not a Flow, DiagnosticsScreen re-reads it on demand
+    // rather than staying subscribed to every message write in the whole app.
+    @Query("SELECT status, COUNT(*) as count FROM message GROUP BY status")
+    suspend fun getStatusCounts(): List<MessageStatusCount>
 
     // Milestone 4: explicitly SENDING/SENT, not "!= DELIVERED"; the earlier version of
     // this query also matched FAILED, the one status that must never be retried.

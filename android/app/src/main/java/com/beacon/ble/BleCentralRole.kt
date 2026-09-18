@@ -13,8 +13,8 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.util.Base64
-import android.util.Log
 import com.beacon.crypto.IdentityKeyStore
+import com.beacon.diagnostics.BeaconLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -64,7 +64,7 @@ class BleCentralRole(
         }
 
         override fun onScanFailed(errorCode: Int) {
-            Log.w(TAG, "Scan failed to start, error code $errorCode")
+            BeaconLog.w(TAG, "Scan failed to start, error code $errorCode")
         }
     }
 
@@ -183,7 +183,7 @@ class BleCentralRole(
             val signatureBytes = Base64.decode(signatureBase64, Base64.NO_WRAP)
             IdentityKeyStore.verify(peerPublicKey, encryptionPublicKeyBytes, signatureBytes)
         } catch (e: Exception) {
-            Log.w(TAG, "Malformed encryption key or signature", e)
+            BeaconLog.w(TAG, "Malformed encryption key or signature", e)
             false
         }
 

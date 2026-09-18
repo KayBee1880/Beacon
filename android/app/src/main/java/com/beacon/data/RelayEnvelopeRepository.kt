@@ -6,6 +6,8 @@ class RelayEnvelopeRepository(private val relayEnvelopeDao: RelayEnvelopeDao) {
 
     suspend fun getByIds(ids: List<String>): List<RelayEnvelope> = relayEnvelopeDao.getByIds(ids)
 
+    suspend fun count(): Int = relayEnvelopeDao.count()
+
     // D-033: an envelope past either bound is worth dropping outright rather than storing
     // and immediately being ineligible to relay further; both are provisional starting
     // guesses, unvalidated against real mesh traffic (docs/07 §7).

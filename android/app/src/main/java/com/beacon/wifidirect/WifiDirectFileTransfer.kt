@@ -9,7 +9,7 @@ import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
-import android.util.Log
+import com.beacon.diagnostics.BeaconLog
 import com.beacon.crypto.CryptoService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -62,7 +62,7 @@ class WifiDirectFileTransfer(private val context: Context) {
             }
             true
         } catch (e: Exception) {
-            Log.w(TAG, "Attachment send failed", e)
+            BeaconLog.w(TAG, "Attachment send failed", e)
             false
         } finally {
             removeGroup()
@@ -81,7 +81,7 @@ class WifiDirectFileTransfer(private val context: Context) {
             if (!received) destinationFile.delete()
             received
         } catch (e: Exception) {
-            Log.w(TAG, "Attachment receive failed", e)
+            BeaconLog.w(TAG, "Attachment receive failed", e)
             destinationFile.delete()
             false
         } finally {
@@ -115,7 +115,7 @@ class WifiDirectFileTransfer(private val context: Context) {
                     if (cont.isActive) cont.resume(Unit)
                 }
                 override fun onFailure(reason: Int) {
-                    Log.w(TAG, "discoverPeers failed, reason $reason")
+                    BeaconLog.w(TAG, "discoverPeers failed, reason $reason")
                     if (cont.isActive) cont.resume(Unit)
                 }
             })
@@ -216,7 +216,7 @@ class WifiDirectFileTransfer(private val context: Context) {
                 val ciphertextLength = try {
                     input.readInt()
                 } catch (e: Exception) {
-                    Log.w(TAG, "Attachment transfer ended early", e)
+                    BeaconLog.w(TAG, "Attachment transfer ended early", e)
                     return false
                 }
                 if (ciphertextLength <= 0) return false
@@ -225,7 +225,7 @@ class WifiDirectFileTransfer(private val context: Context) {
                 val plaintext = try {
                     cryptoService.decrypt(sessionKey, ciphertext)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Attachment chunk decryption failed", e)
+                    BeaconLog.w(TAG, "Attachment chunk decryption failed", e)
                     return false
                 }
                 output.write(plaintext)
@@ -242,7 +242,7 @@ class WifiDirectFileTransfer(private val context: Context) {
         manager.removeGroup(channel, object : WifiP2pManager.ActionListener {
             override fun onSuccess() {}
             override fun onFailure(reason: Int) {
-                Log.w(TAG, "removeGroup failed, reason $reason")
+                BeaconLog.w(TAG, "removeGroup failed, reason $reason")
             }
         })
     }
