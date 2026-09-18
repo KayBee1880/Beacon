@@ -45,8 +45,9 @@ Principles this build has actually practiced so far, each checkable against the 
 - **Milestone 8 (synchronization & conflict resolution) is a real evaluation, not new machinery.** Checked docs/00's own open question (timestamps vs. vector clocks vs. CRDTs) against the domain model as actually built through Milestone 7, and found every piece of state already has exactly one legitimate writer, by construction, no vector clocks or CRDTs are needed because no real multi-writer conflict exists anywhere yet. The one genuine decision this surfaced, whether `Conversation.lastMessageAt` should reflect arrival time or a message's own origin time now that relayed delivery can be days late, is confirmed and documented at [`ConversationDao.touch`](android/app/src/main/java/com/beacon/data/ConversationDao.kt): arrival time, deliberately. Full evaluation, including exactly what would actually trigger needing real conflict resolution later (message editing, mutual read receipts, group conversations, none of which exist yet): [docs/09-milestone-8-synchronization-and-conflict-resolution.md](docs/09-milestone-8-synchronization-and-conflict-resolution.md).
 - **Milestone 9 (visualization & connection quality UX) is written, not yet verified.** A new third tab, [`MeshScreen`](android/app/src/main/java/com/beacon/MeshScreen.kt), draws a logical (not geographic, no location permission involved) topology diagram: this device centered, every currently-in-range peer placed around it with a signal-quality-colored connecting line, plus plain grouped lists for peers recently seen directly and peers known only through the mesh, a three-way distinction ([`PeerReachability`](android/app/src/main/java/com/beacon/PeerReachability.kt)) that was already implicit in existing data and needed no schema change to surface. `ChatScreen`'s header also gained a live signal-strength readout for whoever you're chatting with. `BUILD SUCCESSFUL` via Android Studio. Full design, including the deliberate decision against any GPS-based map: [docs/10-milestone-9-visualization-and-connection-quality.md](docs/10-milestone-9-visualization-and-connection-quality.md).
 - **Milestone 10 (observability) is written, not yet verified.** Every one of the 33 raw `Log.w` calls scattered across the BLE/Wi-Fi Direct code became [`BeaconLog`](android/app/src/main/java/com/beacon/diagnostics/BeaconLog.kt), a small structured facade that still reaches `adb logcat` unchanged but also captures every entry into an in-app, in-memory log, visible through a new [`DiagnosticsScreen`](android/app/src/main/java/com/beacon/DiagnosticsScreen.kt) (identity, peer/message/relay counts, recent log entries), reachable from the Nearby screen rather than a fourth tab. Nothing here ever leaves the device: no analytics SDK, no crash reporter, a deliberate, permanent line this project has held since Milestone 0. `BUILD SUCCESSFUL` via Android Studio. Full design, including why observability for Beacon means an operator in the field can see what's happening, not a developer's remote dashboard: [docs/11-milestone-10-observability.md](docs/11-milestone-10-observability.md).
+- **Milestone 11 (adverse-network testing & benchmarking) added this project's first automated tests, ever, and all 32 pass.** Checked docs/00's own prediction that this milestone would need a platform-agnostic `core` module and found it didn't: the protocol logic that's already Android-free (`ChatFrame`'s wire framing, `CryptoService`'s ECDH/HKDF/AES-GCM math, `Hkdf` itself against RFC 5869's own published test vectors) is tested in place, in a plain JVM `src/test/` suite, no emulator needed. "Simulated packet loss/partition/churn" became targeted failure-injection tests against hand-written fakes (no mocking library): `MessageRepository`'s exponential backoff schedule and retry-exhaustion fallback, `RelayEnvelopeRepository`'s hop/age/storage bounds at their exact edges, `PeerReachability`'s three-way classification. The suite caught two real defects on its very first run, both in the tests themselves rather than production code: two `TestFakes.kt` compile errors (a cross-module smart-cast and a DAO interface method added in Milestone 10 that the fake never picked up), and a transcription mistake in `HkdfTest`'s own RFC 5869 vector (14 bytes too many in the IKM), confirmed by an independent HMAC-SHA256 computation outside this codebase that `Hkdf` itself was already correct. `IdentityKeyStore`-dependent crypto (the handshake/envelope signature) stays untested, real-device-only, an honest, named gap, not an oversight. Full design, including the `core`-module prediction check and exactly what's still out of reach without hardware: [docs/12-milestone-11-adverse-network-testing-and-benchmarking.md](docs/12-milestone-11-adverse-network-testing-and-benchmarking.md).
 
-**What this deliberately does not claim:** there are zero automated tests: everything verified so far was verified manually, by hand, on one emulator, and only covers Milestones 0 and 1. `Conversation` and `Message` (the rest of the Milestone 1 domain model) have no UI exercising them beyond what Milestones 3 and 4 added. Milestones 2 through 10's BLE/Wi-Fi Direct/crypto/retry/relay code compiles cleanly but has never actually run a discovery, a chat, a retry, a relayed message, or a file transfer, the new Mesh diagram has never been seen rendered against a real, populated peer list, and the new Diagnostics screen has never shown real captured data from an actual session. Real device testing is expected to surface real bugs, per the same honesty standard Milestone 1's JDK/build issues were tracked under. All of the above are real, tracked roadmap items, not silent gaps.
+**What this deliberately does not claim:** a first test suite now exists (Milestone 11) and `./gradlew testDebugUnitTest` runs green, 32/32, covering wire framing, ECDH/HKDF/AES-GCM correctness, and the retry/relay/reachability decision logic, but that's a JVM-level correctness check, not a device test. Everything that touches real Bluetooth, real Wi-Fi Direct, or `AndroidKeyStore` remains entirely unverified: Milestones 2 through 9's BLE/Wi-Fi Direct code compiles cleanly but has never actually run a discovery, a chat, a relayed message, or a file transfer, the Mesh diagram has never been seen rendered against a real, populated peer list, and the Diagnostics screen has never shown real captured data from an actual session. Real device testing is expected to surface real bugs, per the same honesty standard Milestone 1's JDK/build issues were tracked under. All of the above are real, tracked roadmap items, not silent gaps.
 
 ## Architecture
 
@@ -93,8 +94,8 @@ Principles this build has actually practiced so far, each checkable against the 
 - [x] **Milestone 7: Wi-Fi Direct bulk transport** (design + code written; needs multiple physical devices to verify, plus a real, untested second radio)
 - [x] **Milestone 8: Synchronization & conflict resolution** (evaluated: no vector clocks/CRDTs needed, every piece of state has one writer by construction; one confirmed decision, no hardware to verify since nothing new was built)
 - [x] **Milestone 9: Visualization & connection quality UX** (design + code written; logical topology diagram, no location permission; needs real multi-peer scenarios to verify layout)
-- [x] **Milestone 10: Observability** ← current (structured logging facade + in-app diagnostics screen written; no telemetry ever leaves the device; needs a real session's worth of captured data to verify)
-- [ ] Milestone 11: Adverse-network testing & benchmarking
+- [x] **Milestone 10: Observability** (structured logging facade + in-app diagnostics screen written; no telemetry ever leaves the device; needs a real session's worth of captured data to verify)
+- [x] **Milestone 11: Adverse-network testing & benchmarking** ← current (this project's first automated test suite; 32/32 passing via `./gradlew testDebugUnitTest`; crypto signing and all real BLE/Wi-Fi Direct paths still need physical devices)
 
 Full roadmap with what each milestone delivers: [docs/00-foundations.md](docs/00-foundations.md#7-milestone-roadmap).
 
@@ -115,19 +116,22 @@ Beacon/
 │   ├── 09-milestone-8-synchronization-and-conflict-resolution.md
 │   ├── 10-milestone-9-visualization-and-connection-quality.md
 │   ├── 11-milestone-10-observability.md
+│   ├── 12-milestone-11-adverse-network-testing-and-benchmarking.md
 │   ├── architecture/                     # ADRs (0001 to 0004) + current/target diagrams
 │   ├── protocol/                         # (not yet populated) wire format, sequence diagrams
 │   ├── security/                         # (not yet populated) threat model, crypto rationale
 │   └── testing/                          # (not yet populated) network simulation, benchmarks
 ├── android/                              # Kotlin / Jetpack Compose client (Gradle project)
-│   └── app/src/main/
-│       ├── java/com/beacon/              # BeaconApplication, MainActivity, ChatScreen, ConversationsScreen, MeshScreen, DiagnosticsScreen
-│       │   ├── data/                     # Room entities, DAOs, database, repositories, RelayEnvelope
-│       │   ├── crypto/                   # Identity Keystore key, session + envelope crypto (CryptoService, Hkdf)
-│       │   ├── ble/                      # Discovery (central/peripheral roles), chat (ChatConnection, ChatGattServer, ChatFrame), relay (RelayGossipSession, RelayGossipCoordinator)
-│       │   ├── wifidirect/               # Bulk attachment transfer (WifiDirectFileTransfer, WifiDirectPermissions)
-│       │   └── diagnostics/              # Structured, in-app-observable logging (BeaconLog)
-│       └── res/                          # Strings, theme
+│   └── app/src/
+│       ├── main/
+│       │   ├── java/com/beacon/          # BeaconApplication, MainActivity, ChatScreen, ConversationsScreen, MeshScreen, DiagnosticsScreen
+│       │   │   ├── data/                 # Room entities, DAOs, database, repositories, RelayEnvelope
+│       │   │   ├── crypto/               # Identity Keystore key, session + envelope crypto (CryptoService, Hkdf)
+│       │   │   ├── ble/                  # Discovery (central/peripheral roles), chat (ChatConnection, ChatGattServer, ChatFrame), relay (RelayGossipSession, RelayGossipCoordinator)
+│       │   │   ├── wifidirect/           # Bulk attachment transfer (WifiDirectFileTransfer, WifiDirectPermissions)
+│       │   │   └── diagnostics/          # Structured, in-app-observable logging (BeaconLog)
+│       │   └── res/                      # Strings, theme
+│       └── test/                         # Plain JVM unit tests, no emulator needed (ChatFrame, CryptoService, Hkdf, retry/relay/reachability logic)
 ├── tools/                                # (not yet populated) dev scripts, network condition simulators
 ├── LICENSE
 └── README.md
@@ -161,6 +165,7 @@ This is currently a local-only project: there's no remote yet, so there's no `gi
 - [docs/09-milestone-8-synchronization-and-conflict-resolution.md](docs/09-milestone-8-synchronization-and-conflict-resolution.md): why no vector clocks or CRDTs are needed yet, and the one real decision the evaluation surfaced
 - [docs/10-milestone-9-visualization-and-connection-quality.md](docs/10-milestone-9-visualization-and-connection-quality.md): logical mesh topology over any GPS map, the three-way peer reachability split, and connection quality UX
 - [docs/11-milestone-10-observability.md](docs/11-milestone-10-observability.md): structured logging, an in-app diagnostics screen, and why no telemetry ever leaves the device
+- [docs/12-milestone-11-adverse-network-testing-and-benchmarking.md](docs/12-milestone-11-adverse-network-testing-and-benchmarking.md): checking the `core`-module prediction against reality, and what "simulated packet loss/partition/churn" means without one
 - [docs/architecture/](docs/architecture/): Architecture Decision Records
 
 ## License

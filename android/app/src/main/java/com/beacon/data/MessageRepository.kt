@@ -220,7 +220,12 @@ class MessageRepository(
         )
     }
 
-    private fun backoffDelayMillis(retryCount: Int): Long {
+    // Milestone 11 (D-058): internal rather than private specifically so a unit test can
+    // exercise the MAX_RETRY_DELAY_MS cap directly. That cap is unreachable through the
+    // public scheduleRetry API today, MAX_RETRY_COUNT (5) means retryCount never climbs
+    // high enough for the exponential term to actually hit it, see MessageRepositoryTest's
+    // own comment on why testing it any other way would be vacuous.
+    internal fun backoffDelayMillis(retryCount: Int): Long {
         val exponential = BASE_RETRY_DELAY_MS * (1L shl (retryCount - 1))
         return minOf(exponential, MAX_RETRY_DELAY_MS)
     }

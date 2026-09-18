@@ -54,4 +54,9 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Milestone 11 (D-055): plain JVM unit tests, src/test/, no emulator or device
+    // needed, this project's first automated tests of any kind.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 }
