@@ -53,6 +53,21 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
+    // Milestone 13 (D-062/D-064): SQLCipher's SupportFactory wraps Room's normal SQLite
+    // access with page-level AES-256 encryption. The current, actively maintained
+    // net.zetetic:sqlcipher-android was tried first and rejected on real build evidence,
+    // not preference: 4.19.0 requires compileSdk 37 (a much larger, unrelated toolchain
+    // upgrade this project has no other reason to make), and 4.17.0 (before that
+    // requirement existed) transitively pulls an androidx.sqlite build compiled with
+    // Kotlin 2.1, incompatible with this project's pinned Kotlin 1.9.24 compiler. This
+    // older, deprecated-but-stable artifact and its old androidx.sqlite companion predate
+    // that entire toolchain generation, avoiding both problems. Real tradeoff, not free:
+    // deprecated, and per Zetetic's own docs, missing the 16KB native-page-size support
+    // Google Play now requires for new/updated apps, fine for a project with no release
+    // anywhere on the horizon, but must be revisited before one exists (D-064).
+    implementation("net.zetetic:android-database-sqlcipher:4.5.3")
+    implementation("androidx.sqlite:sqlite:2.1.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     // Milestone 11 (D-055): plain JVM unit tests, src/test/, no emulator or device

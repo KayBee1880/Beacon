@@ -49,7 +49,9 @@ Principles this build has actually practiced so far, each checkable against the 
 
 - **Milestone 12 (multi-hop delivery acknowledgment) is written, builds cleanly, and passes the full JVM unit test suite; multi-device relay delivery itself is still unverified.** A relayed message's original sender can now actually learn it arrived: [`RelayEnvelope`](android/app/src/main/java/com/beacon/data/RelayEnvelope.kt) gained a `kind` (message or ack) and carries its creator's own authenticated long-term encryption key, so [`RelayGossipSession`](android/app/src/main/java/com/beacon/ble/RelayGossipSession.kt) can build a return-path envelope back to someone it may have never discovered directly, riding the exact same gossip/storage-bound machinery Milestone 6 already built, no parallel protocol. `DELIVERED` is now a real, reachable status for a relayed message, not only a direct one; `SENT` keeps meaning exactly what it always did. Checked (not assumed) whether a malicious relay could tamper with the new envelope metadata to cause harm, found every path already resolves to a safe no-op through mechanisms that exist for other reasons. `BUILD SUCCESSFUL` via Android Studio, `testDebugUnitTest` green. Full design: [docs/13-milestone-12-multi-hop-delivery-acknowledgment.md](docs/13-milestone-12-multi-hop-delivery-acknowledgment.md).
 
-**What this deliberately does not claim:** a first test suite exists (Milestone 11) and `./gradlew testDebugUnitTest` runs green, covering wire framing, ECDH/HKDF/AES-GCM correctness, and the retry/relay/reachability decision logic, but that's a JVM-level correctness check, not a device test. `RelayGossipSession`'s actual ack-building/delivery code (Milestone 12) is excluded from that suite for the same D-057 reason as the rest of the relay path, it transitively reaches `IdentityKeyStore`, so a clean build and a green test run confirm the code compiles and every already-testable piece behaves correctly, not that a real ack has ever actually traveled the mesh. Everything that touches real Bluetooth, real Wi-Fi Direct, or `AndroidKeyStore` remains entirely unverified: Milestones 2 through 9's BLE/Wi-Fi Direct code compiles cleanly but has never actually run a discovery, a chat, a relayed message, or a file transfer, the Mesh diagram has never been seen rendered against a real, populated peer list, and the Diagnostics screen has never shown real captured data from an actual session. Real device testing is expected to surface real bugs, per the same honesty standard Milestone 1's JDK/build issues were tracked under. All of the above are real, tracked roadmap items, not silent gaps.
+- **Milestone 13 (at-rest database encryption) is written and builds cleanly; the JVM unit test suite has not been separately re-confirmed since.** `beacon.db` is now opened through SQLCipher, page-level AES-256 encryption, not just Android's own file-based encryption. The passphrase is a random value generated once and wrapped by a brand-new, dedicated Android Keystore AES-256-GCM key ([`DatabaseKeyStore`](android/app/src/main/java/com/beacon/crypto/DatabaseKeyStore.kt)), mirroring how `IdentityKeyStore` already owns the identity signing key, a fresh key rather than a reused one since an EC signing key can't also do encryption, the same platform restriction Milestone 6's relay encryption key already ran into. Any pre-existing plaintext database is deleted on first run rather than migrated in place, the same "no real release, nothing to preserve" reasoning every schema-version bump has relied on since Milestone 4. The dependency choice itself was a real, two-step correction: `net.zetetic:sqlcipher-android` (the current, actively maintained SQLCipher artifact) failed twice on real build evidence, first an AAR metadata `compileSdk 37` requirement this project's `compileSdk 34`/AGP 8.5.0 can't satisfy, then a Kotlin 2.1/1.9 binary metadata mismatch in a transitive dependency; the older, deprecated `net.zetetic:android-database-sqlcipher` predates both problems and is what's actually integrated, a named tradeoff (missing Google Play's 16KB native-page-size requirement) acceptable for a project with no release on the horizon, not indefinitely. Named honestly, not left implicit: this protects the raw file against extraction that doesn't also compromise code execution as this app (a lost or seized but locked device, an `adb backup`), not against a fully rooted, actively-running attacker. `BUILD SUCCESSFUL` via Android Studio (`assembleDebug`). Full design, including exactly what Android's file-based encryption already covers and what this adds on top: [docs/14-milestone-13-at-rest-database-encryption.md](docs/14-milestone-13-at-rest-database-encryption.md).
+
+**What this deliberately does not claim:** a first test suite exists (Milestone 11) and `./gradlew testDebugUnitTest` runs green, covering wire framing, ECDH/HKDF/AES-GCM correctness, and the retry/relay/reachability decision logic, but that's a JVM-level correctness check, not a device test. `RelayGossipSession`'s actual ack-building/delivery code (Milestone 12) is excluded from that suite for the same D-057 reason as the rest of the relay path, it transitively reaches `IdentityKeyStore`, so a clean build and a green test run confirm the code compiles and every already-testable piece behaves correctly, not that a real ack has ever actually traveled the mesh. Milestone 13's code builds and packages cleanly (`assembleDebug`), but `testDebugUnitTest` has not been separately re-run since, and `DatabaseKeyStore` is untestable in that suite regardless, for the identical `AndroidKeyStore` reason as `IdentityKeyStore`. Everything that touches real Bluetooth, real Wi-Fi Direct, or `AndroidKeyStore` remains entirely unverified: Milestones 2 through 9's BLE/Wi-Fi Direct code compiles cleanly but has never actually run a discovery, a chat, a relayed message, or a file transfer, the Mesh diagram has never been seen rendered against a real, populated peer list, and the Diagnostics screen has never shown real captured data from an actual session. Real device testing is expected to surface real bugs, per the same honesty standard Milestone 1's JDK/build issues were tracked under. All of the above are real, tracked roadmap items, not silent gaps.
 
 ## Architecture
 
@@ -76,13 +78,8 @@ Principles this build has actually practiced so far, each checkable against the 
 | Message encryption | Ephemeral EC/secp256r1 + ECDH + HKDF-SHA256 + AES-256-GCM | Milestone 3, code written, **not yet run on real hardware**, see [docs/04](docs/04-milestone-3-secure-messaging.md) |
 | Store and forward relay | Long-term EC/secp256r1 encryption keypair per identity, end-to-end ECDH to a message's final recipient, flood-based gossip over the existing chat connection | Milestone 6, code written, **not yet run on real hardware**, see [docs/07](docs/07-milestone-6-store-and-forward-relay.md) |
 | Wi-Fi Direct bulk transport | `android.net.wifi.p2p`, BLE-negotiated device address exchange, chunked AES-GCM over a socket using the existing session key | Milestone 7, code written, **not yet run on real hardware**, see [docs/08](docs/08-milestone-7-wifi-direct-bulk-transport.md) |
+| At-rest database encryption | SQLCipher (`net.zetetic:android-database-sqlcipher`), random passphrase wrapped by a dedicated Android Keystore AES-256-GCM key | Milestone 13, code written, builds cleanly, **not yet run on real hardware**, see [docs/14](docs/14-milestone-13-at-rest-database-encryption.md) |
 | Build | Gradle (Kotlin DSL), AGP 8.5.0 | Type-checked build scripts, IDE autocomplete on config itself |
-
-### Planned
-
-| Technology | Purpose | Milestone |
-|---|---|---|
-| SQLCipher (candidate) | At-rest database encryption, evaluated once transit encryption exists to compare against | Deferred (see [docs/02](docs/02-milestone-1-domain-and-persistence.md#5-decision-room-for-local-persistence)) |
 
 ## Roadmap
 
@@ -98,7 +95,11 @@ Principles this build has actually practiced so far, each checkable against the 
 - [x] **Milestone 9: Visualization & connection quality UX** (design + code written; logical topology diagram, no location permission; needs real multi-peer scenarios to verify layout)
 - [x] **Milestone 10: Observability** (structured logging facade + in-app diagnostics screen written; no telemetry ever leaves the device; needs a real session's worth of captured data to verify)
 - [x] **Milestone 11: Adverse-network testing & benchmarking** (this project's first automated test suite; 32/32 passing via `./gradlew testDebugUnitTest`; crypto signing and all real BLE/Wi-Fi Direct paths still need physical devices)
-- [x] **Milestone 12: Multi-hop delivery acknowledgment** ← current (design + code written, builds cleanly, passes the full unit test suite; a relayed message can now reach a real `DELIVERED` status, not just `SENT`; needs multiple physical devices to verify the actual round trip)
+
+Milestones 0 through 11 above are docs/00's original roadmap, in full. Everything below extends past it, picked up from items those milestones had explicitly named and deferred rather than left silently undone:
+
+- [x] **Milestone 12: Multi-hop delivery acknowledgment** (design + code written, builds cleanly, passes the full unit test suite; a relayed message can now reach a real `DELIVERED` status, not just `SENT`; needs multiple physical devices to verify the actual round trip)
+- [x] **Milestone 13: At-rest database encryption** ← current (design + code written, closes the SQLCipher gap docs/02 named at Milestone 1; builds cleanly via `assembleDebug`; needs a real device to verify the database actually opens and behaves correctly at runtime)
 
 Full roadmap with what each milestone delivers: [docs/00-foundations.md](docs/00-foundations.md#7-milestone-roadmap).
 
@@ -121,6 +122,7 @@ Beacon/
 │   ├── 11-milestone-10-observability.md
 │   ├── 12-milestone-11-adverse-network-testing-and-benchmarking.md
 │   ├── 13-milestone-12-multi-hop-delivery-acknowledgment.md
+│   ├── 14-milestone-13-at-rest-database-encryption.md
 │   ├── architecture/                     # ADRs (0001 to 0004) + current/target diagrams
 │   ├── protocol/                         # (not yet populated) wire format, sequence diagrams
 │   ├── security/                         # (not yet populated) threat model, crypto rationale
@@ -130,7 +132,7 @@ Beacon/
 │       ├── main/
 │       │   ├── java/com/beacon/          # BeaconApplication, MainActivity, ChatScreen, ConversationsScreen, MeshScreen, DiagnosticsScreen
 │       │   │   ├── data/                 # Room entities, DAOs, database, repositories, RelayEnvelope
-│       │   │   ├── crypto/               # Identity Keystore key, session + envelope crypto (CryptoService, Hkdf)
+│       │   │   ├── crypto/               # Identity + database Keystore keys, session + envelope crypto (CryptoService, Hkdf)
 │       │   │   ├── ble/                  # Discovery (central/peripheral roles), chat (ChatConnection, ChatGattServer, ChatFrame), relay (RelayGossipSession, RelayGossipCoordinator)
 │       │   │   ├── wifidirect/           # Bulk attachment transfer (WifiDirectFileTransfer, WifiDirectPermissions)
 │       │   │   └── diagnostics/          # Structured, in-app-observable logging (BeaconLog)
@@ -171,6 +173,7 @@ This is currently a local-only project: there's no remote yet, so there's no `gi
 - [docs/11-milestone-10-observability.md](docs/11-milestone-10-observability.md): structured logging, an in-app diagnostics screen, and why no telemetry ever leaves the device
 - [docs/12-milestone-11-adverse-network-testing-and-benchmarking.md](docs/12-milestone-11-adverse-network-testing-and-benchmarking.md): checking the `core`-module prediction against reality, and what "simulated packet loss/partition/churn" means without one
 - [docs/13-milestone-12-multi-hop-delivery-acknowledgment.md](docs/13-milestone-12-multi-hop-delivery-acknowledgment.md): closing Milestone 6's own deferred gap, reusing the relay envelope itself as the return path, and why no new envelope-metadata signature was needed
+- [docs/14-milestone-13-at-rest-database-encryption.md](docs/14-milestone-13-at-rest-database-encryption.md): closing Milestone 1's own deferred SQLCipher gap, what it protects against versus Android's own file-based encryption, and what it honestly still doesn't
 - [docs/architecture/](docs/architecture/): Architecture Decision Records
 
 ## License
