@@ -15,7 +15,10 @@ import java.security.SecureRandom
 @Database(
     entities = [Identity::class, Peer::class, Conversation::class, Message::class, RelayEnvelope::class],
     version = 5,
-    exportSchema = false
+    // Milestone 14 (D-068): on starting now, not reconstructed for versions 1-4, which
+    // were never captured. room.schemaLocation (build.gradle.kts) is where KSP writes
+    // the exported JSON.
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class BeaconDatabase : RoomDatabase() {
@@ -41,11 +44,15 @@ abstract class BeaconDatabase : RoomDatabase() {
                 BeaconDatabase::class.java,
                 DATABASE_NAME
             )
-                // Milestone 13 (D-062): every previous version bump's destructive-migration
-                // reasoning (D-023) still applies unchanged, SQLCipher only changes how the
-                // file's bytes are stored, not the schema Room migrates.
                 .openHelperFactory(SupportFactory(passphrase))
-                .fallbackToDestructiveMigration()
+                // Milestone 14 (D-067): a real Migration for every version bump this
+                // project has ever had, replacing D-023's destructive fallback. A missing
+                // *upgrade* path now throws loudly instead of silently deleting
+                // everything; only a downgrade (a real, ordinary development-time
+                // occurrence, never a legitimate production path) still falls back
+                // destructively.
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
         }
 

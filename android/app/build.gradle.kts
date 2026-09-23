@@ -40,6 +40,13 @@ android {
     }
 }
 
+// Milestone 14 (D-068): where KSP writes each version's exported Room schema JSON,
+// starting from version 5 (exportSchema was false before now, docs/02 §5); committed to
+// the repo, ground truth for any future MigrationTestHelper-based instrumented test.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
