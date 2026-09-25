@@ -35,14 +35,23 @@ abstract class BeaconDatabase : RoomDatabase() {
         private const val PREFS_KEY_WRAPPED_PASSPHRASE = "wrapped_passphrase"
         private const val PASSPHRASE_LENGTH_BYTES = 32
 
-        fun build(context: Context): BeaconDatabase {
+        fun build(context: Context): BeaconDatabase = build(context, DATABASE_NAME, PREFS_NAME)
+
+        // Milestone 15 (D-069): databaseName/prefsName are parameters, not hardcoded to
+        // this class's own constants, specifically so BeaconDatabaseTest can exercise
+        // this exact passphrase-bootstrap code path against an isolated file and
+        // SharedPreferences entry, never the real beacon.db (or its wrapped passphrase)
+        // an actual install, or a developer's own manually tested app, already has real
+        // data in. The no-argument build(context) above is the only production call site,
+        // always using the real names; nothing about it changed.
+        internal fun build(context: Context, databaseName: String, prefsName: String): BeaconDatabase {
             SQLiteDatabase.loadLibs(context)
-            val passphrase = getOrCreatePassphrase(context)
+            val passphrase = getOrCreatePassphrase(context, databaseName, prefsName)
 
             return Room.databaseBuilder(
                 context.applicationContext,
                 BeaconDatabase::class.java,
-                DATABASE_NAME
+                databaseName
             )
                 .openHelperFactory(SupportFactory(passphrase))
                 // Milestone 14 (D-067): a real Migration for every version bump this
@@ -57,19 +66,20 @@ abstract class BeaconDatabase : RoomDatabase() {
         }
 
         // Milestone 13 (D-062/D-063): a wrapped passphrase already present means this
-        // install has opened an encrypted beacon.db before, just unwrap and reuse it.
-        // Its absence is this function's only signal that this is the very first run of
-        // this milestone's code, which doubles as D-063's migration trigger: any beacon.db
-        // already on disk at that point necessarily predates encryption entirely, and gets
-        // deleted before SQLCipher ever tries to open it with a freshly generated passphrase.
-        private fun getOrCreatePassphrase(context: Context): ByteArray {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        // install has opened an encrypted database under this name before, just unwrap
+        // and reuse it. Its absence is this function's only signal that this is the very
+        // first run against this particular database, which doubles as D-063's migration
+        // trigger: any file already on disk under this name at that point necessarily
+        // predates encryption entirely, and gets deleted before SQLCipher ever tries to
+        // open it with a freshly generated passphrase.
+        private fun getOrCreatePassphrase(context: Context, databaseName: String, prefsName: String): ByteArray {
+            val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
             val wrapped = prefs.getString(PREFS_KEY_WRAPPED_PASSPHRASE, null)
             if (wrapped != null) {
                 return DatabaseKeyStore.decrypt(Base64.decode(wrapped, Base64.NO_WRAP))
             }
 
-            deleteExistingDatabaseFiles(context)
+            deleteExistingDatabaseFiles(context, databaseName)
             val passphrase = ByteArray(PASSPHRASE_LENGTH_BYTES).also { SecureRandom().nextBytes(it) }
             val wrappedPassphrase = DatabaseKeyStore.encrypt(passphrase)
             prefs.edit()
@@ -78,11 +88,11 @@ abstract class BeaconDatabase : RoomDatabase() {
             return passphrase
         }
 
-        // WAL/SHM/rollback-journal siblings too, not just beacon.db itself: leaving a
+        // WAL/SHM/rollback-journal siblings too, not just the main file itself: leaving a
         // stale journal file next to a freshly created, differently-keyed database file
         // risks SQLite trying to recover from it against content that no longer matches.
-        private fun deleteExistingDatabaseFiles(context: Context) {
-            val databaseFile = context.getDatabasePath(DATABASE_NAME)
+        private fun deleteExistingDatabaseFiles(context: Context, databaseName: String) {
+            val databaseFile = context.getDatabasePath(databaseName)
             databaseFile.delete()
             File(databaseFile.path + "-wal").delete()
             File(databaseFile.path + "-shm").delete()

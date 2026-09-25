@@ -14,6 +14,9 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
+        // Milestone 15 (D-069): required for any androidTest instrumented test to run
+        // at all, the standard JUnit4-on-a-real-device runner.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildFeatures {
@@ -37,6 +40,13 @@ android {
         release {
             isMinifyEnabled = false
         }
+    }
+
+    // Milestone 15 (D-069): MigrationTestHelper reads a version's exported schema from
+    // its test assets, not directly from app/schemas/; this is what actually copies
+    // Milestone 14's exported JSON (room.schemaLocation, below) in for androidTest to see.
+    sourceSets {
+        getByName("androidTest").assets.srcDirs("$projectDir/schemas")
     }
 }
 
@@ -81,4 +91,15 @@ dependencies {
     // needed, this project's first automated tests of any kind.
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+
+    // Milestone 15 (D-069): androidTest/, real AndroidKeyStore access, this project's
+    // first tests that actually run on a device or emulator rather than a plain JVM.
+    // Versions chosen by checking their own release notes describe a Kotlin 1.9.x build,
+    // matching this project's pinned compiler, per D-064's lesson about checking a new
+    // dependency's toolchain assumptions before adding it, not after a build fails.
+    androidTestImplementation("androidx.test:core:1.7.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
 }
